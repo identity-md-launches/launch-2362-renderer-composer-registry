@@ -3,6 +3,7 @@ pragma solidity 0.8.24;
 
 import {Base} from "./Base.t.sol";
 import {Composer} from "src/Composer.sol";
+import {Registry} from "src/Registry.sol";
 import {Renderer} from "src/Renderer.sol";
 import {Spec, Card} from "src/Types.sol";
 
@@ -186,5 +187,57 @@ contract WorkflowInputPropertiesTest is Base {
             address(renderer).staticcall{gas: 5_000_000}(abi.encodeCall(Renderer.tokenURIOf, (address(source), 1)));
         assertFalse(ok);
         assertEq(reason, abi.encodeWithSelector(Renderer.UnknownTrait.selector, 601), "bounded error, not panic or OOG");
+    }
+
+    function constructRegistry(address[7] memory d) external returns (Registry) {
+        return new Registry(d[0], d[1], d[2], d[3], d[4], d[5], d[6]);
+    }
+
+    /// @notice Every combination of coded read dependencies and executor: the executor code check is
+    ///         skipped only on the empty-chain floor (all three of Curator, IMD and Intake codeless),
+    ///         fires before any live read whenever one of them has code, and a partially coded set with
+    ///         a coded executor still reverts on the missing read rather than constructing.
+    /// forge-config: default.fuzz.runs = 1000
+    function testFuzz_executorCodeCheckSkippedOnlyOnTheEmptyFloor(uint8 codedMask, bool executorCoded, uint160 salt)
+        public
+    {
+        codedMask = uint8(bound(codedMask, 0, 7));
+        address[3] memory absent = [
+            address(uint160(bound(salt, 0x10000, type(uint160).max / 4))),
+            address(uint160(bound(salt, 0x10000, type(uint160).max / 4)) + 1),
+            address(uint160(bound(salt, 0x10000, type(uint160).max / 4)) + 2)
+        ];
+        address codelessExecutor = address(uint160(bound(salt, 0x10000, type(uint160).max / 4)) + 3);
+        for (uint256 i; i < 3; ++i) {
+            assertEq(absent[i].code.length, 0);
+        }
+        assertEq(codelessExecutor.code.length, 0);
+        address[7] memory d = [
+            codedMask & 1 != 0 ? address(curator) : absent[0],
+            codedMask & 2 != 0 ? address(imd) : absent[1],
+            codedMask & 4 != 0 ? address(intake) : absent[2],
+            attester,
+            address(renderer),
+            address(composer),
+            executorCoded ? address(executor) : codelessExecutor
+        ];
+        if (codedMask == 0) {
+            Registry floor = this.constructRegistry(d);
+            assertEq(floor.burnExecutor(), d[6]);
+            assertEq(address(floor.curator()), d[0]);
+            return;
+        }
+        if (!executorCoded) {
+            vm.expectRevert(Registry.ExecutorHasNoCode.selector);
+            this.constructRegistry(d);
+            return;
+        }
+        if (codedMask != 7) {
+            vm.expectRevert();
+            this.constructRegistry(d);
+            return;
+        }
+        Registry live = this.constructRegistry(d);
+        assertEq(live.burnExecutor(), address(executor));
     }
 }
