@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
+import {MockBurnExecutor} from "./mocks/MockBurnExecutor.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {Registry} from "../src/Registry.sol";
@@ -28,6 +29,7 @@ abstract contract Base is Test {
     MockCurator internal curator;
     MockIDMD internal idmd;
     MockIMD internal imd;
+    MockBurnExecutor internal executor;
     MockIntake internal intake;
     RendererHarness internal renderer;
     Composer internal composer;
@@ -43,6 +45,7 @@ abstract contract Base is Test {
         curator = MockCurator(CURATOR_ADDR);
         idmd = new MockIDMD();
         imd = new MockIMD();
+        executor = new MockBurnExecutor();
         intake = new MockIntake(address(imd));
         renderer = new RendererHarness();
         composer = new Composer();
@@ -50,13 +53,12 @@ abstract contract Base is Test {
             "Registry.sol:Registry",
             abi.encode(
                 CURATOR_ADDR,
-                address(idmd),
                 address(imd),
                 address(intake),
                 attester,
                 address(renderer),
                 address(composer),
-                address(0)
+                address(executor)
             ),
             REGISTRY_ADDR
         );
@@ -91,7 +93,7 @@ abstract contract Base is Test {
     function attestationFor(bytes32 requestId, bytes memory answer) internal view returns (OracleAttestation memory a) {
         (, uint16 traitId,, bytes32 qh) = registry.pendingRequest(requestId);
         Spec memory s = registry.specOf(traitId);
-        bool panel = s.kind == 5 || s.kind == 3;
+        bool panel = s.kind == 5 || s.kind == 3 || s.kind == 6;
         a.requestId = bytes32(uint256(uint128(uint256(keccak256(abi.encode("uuid", requestId))))) << 128);
         a.chainId = 1;
         a.questionHash = qh;

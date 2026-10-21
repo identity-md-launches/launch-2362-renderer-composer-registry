@@ -48,7 +48,7 @@ HIVE_PATH = Path("src/HiveData.sol")
 DESCRIPTION = (
     "Sworn is an ownerless onchain registry of verifiable wallet feats. One card per wallet; every trait is a fact "
     "about the claimant wallet that minted the card, never about the holder. Direct-read traits are read "
-    "from the settled WhitelistCurator and the IdentityMD collection; chain-proven, panel-attested "
+    "from the settled WhitelistCurator; chain-proven, panel-attested "
     "and shared-fact traits are attested by the IMD oracle through the Intake and verified in the "
     "registry. Allowlists read hasTrait, never ownerOf. Facts about the wallet that minted it; direct traits "
     "frozen at mint; transferable."
@@ -60,7 +60,7 @@ FAMILIES = (
     "Hopper",
     "Bullfrog",
     "Benchmarked",
-    "Armed",
+    "Swarmed",
     "Uptime",
     "Holdout",
     "Final Token",
@@ -124,7 +124,7 @@ TIERS = (
 TIER_COUNT = (1, 2, 3, 4, 3, 1, 1, 1, 1, 1, 1, 1, 1)  # n per family; Ordinal counts as one level
 ORDINAL = 10
 RARE_IDS = frozenset((202, 801, 901, 1001, 1101, 1102, 1103, 1104, 1201))
-CLASS_COLOUR = ("#00cc33",) * 6 + ("#00ff41",) * 5 + ("#dbfee6", "#8ff0a4")
+CLASS_COLOUR = ("#00cc33",) * 5 + ("#8ff0a4",) + ("#00ff41",) * 5 + ("#dbfee6", "#8ff0a4")
 OFF_COLOUR = "#151515"
 RING_RADII = (62, 45, 28)
 OPACITIES = (("1.00",), ("0.35", "1.00"), ("0.35", "0.68", "1.00"), ("0.35", "0.57", "0.78", "1.00"))
@@ -495,6 +495,7 @@ class CardData:
     oracle: tuple[OracleMeta, ...] = field(default_factory=tuple)
 
 
+SPEC_601 = SpecData(6, "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d", "", "", "", 0, "", 0, 3, 25090085, 26199936, "Swarmed")
 SPEC_801 = SpecData(1, CURATOR, DEPOSITED, "contributor", "hour", 64, "", 0, 1, B_DEPLOY, B_END, "Holdout")
 SPEC_10001 = SpecData(
     1,
@@ -523,7 +524,7 @@ SPEC_HOSTILE = SpecData(
     1000,
     B_DEPLOY,
     B_END,
-    'a"b\\c<d>&e',
+    'a"b\\c<d>&e\'',
 )
 
 REQUEST_1 = "0x1111111111111111111111111111111111111111111111111111111111111111"
@@ -585,7 +586,7 @@ CASES = {
         traits=(601, 801),
         community=(10001,),
         communityCount=1,
-        oracle=(OracleMeta(801, REQUEST_1, ORACLE_1, SPEC_801), OracleMeta(10001, REQUEST_2, ORACLE_2, SPEC_10001)),
+        oracle=(OracleMeta(601, "0x" + "33" * 32, "0x" + "44" * 16 + "00" * 16, SPEC_601), OracleMeta(801, REQUEST_1, ORACLE_1, SPEC_801), OracleMeta(10001, REQUEST_2, ORACLE_2, SPEC_10001)),
     ),
     # the widest values the renderer can meet, through the renderer alone
     "synthetic_width": CardData(
@@ -752,7 +753,7 @@ def escape_json(raw: str) -> str:
     for byte in raw.encode("latin-1"):
         if byte in (0x22, 0x5C):
             out.append("\\" + chr(byte))
-        elif byte < 0x20 or byte in (0x3C, 0x3E, 0x26):
+        elif byte < 0x20 or byte in (0x3C, 0x3E, 0x26, 0x27):
             out.append(f"\\u00{byte:02x}")
         else:
             out.append(chr(byte))
@@ -764,11 +765,11 @@ def oracle_entry(meta: OracleMeta) -> str:
     return (
         '{"traitId":' + unsigned(meta.traitId)
         + ',"template":"T' + unsigned(s.kind)
-        + '","evidence":"' + ("panel" if s.kind == 5 else "chain")
+        + '","evidence":"' + ("panel" if s.kind in (5, 6) else "chain")
         + '","fromBlock":' + unsigned(s.fromBlock)
         + ',"toBlock":' + unsigned(s.toBlock)
-        + ',"minPanelSize":' + ("11" if s.kind in (3, 5) else "5")
-        + ',"minQuorum":' + ("7" if s.kind in (3, 5) else "3")
+        + ',"minPanelSize":' + ("11" if s.kind in (3, 5, 6) else "5")
+        + ',"minQuorum":' + ("7" if s.kind in (3, 5, 6) else "3")
         + ',"requestId":"' + hex32(meta.requestId)
         + '","oracleRequestId":"' + hex32(meta.oracleRequestId)
         + '","target":"' + s.target

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
+import {IBurnExecutor} from "../../src/interfaces/IBurnExecutor.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
@@ -13,21 +14,11 @@ import {OracleAttestation} from "../../src/interfaces/IOracleConsumer.sol";
 import {Spec} from "../../src/Types.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/// @notice Fork tests against Ethereum mainnet at a pinned block: the settled Curator, the IDMD
-///         collection, the IMD token and Intake v2 as they are, with the registry deployed on top.
-///         They run only when `SWORN_FORK_RPC` is set; the hermetic suite and the verifier
-///         (no network) skip them. Never `vm.setEnv`: the URL is read, never written.
-///
-///         What they prove that the mocks cannot: the Curator's views have the shapes the registry
-///         assumes (a non-member is `(0, false)`, the first contributor is hour 0, the last is hour
-///         64), the real IDMD `balanceOf(0)` reverts and `hasTrait` still answers false, Intake v2
-///         prices the action at `priceOf`, keeps a 200,000 stipend and names the writer the brief
-///         records, and a request made through the real `requestWithFailure` is completed by the
-///         real `complete` (pranked from the writer) into `onResult` and `onFailure` under the
-///         real stipend.
+/// @notice Opt-in archive integration checks. Run using Forge's --fork-url and --fork-block-number
+///         CLI arguments, never environment reads in a test. The offline suite skips without live code.
 contract MainnetForkTest is Test {
-    uint256 internal constant FORK_BLOCK = 26_170_000;
-    bytes32 internal constant FORK_BLOCK_HASH = 0x5cb5567d4c5b958befdffdf27aae37e35e7cbf3a26737e17926480460fad4ce4;
+    uint256 internal constant FORK_BLOCK = 26_237_654;
+    address internal constant EXECUTOR = 0xe29386719C155B6847aD5a4E97C6674f10ffc750;
 
     address internal constant CURATOR = 0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91;
     address internal constant IDMD = 0x0000eC93127BAA929E58E97dd0095A2BFb38ec1D;
@@ -58,16 +49,14 @@ contract MainnetForkTest is Test {
     bool internal forked;
 
     function setUp() public {
-        string memory url = vm.envOr("SWORN_FORK_RPC", string(""));
-        if (bytes(url).length == 0) return;
-        vm.createSelectFork(url, FORK_BLOCK);
+        if (CURATOR.code.length == 0 || EXECUTOR.code.length == 0) return;
+        require(block.number == FORK_BLOCK, "pin the CLI fork block to 26237654");
         forked = true;
         assertEq(block.chainid, 1, "the fork must be Ethereum mainnet");
         attester = vm.addr(ATTESTER_KEY);
         Renderer renderer = new Renderer();
         Composer composer = new Composer();
-        registry =
-            new Registry(CURATOR, IDMD, IMD, INTAKE_V2, attester, address(renderer), address(composer), address(0));
+        registry = new Registry(CURATOR, IMD, INTAKE_V2, attester, address(renderer), address(composer), EXECUTOR);
     }
 
     modifier onFork() {
@@ -83,9 +72,6 @@ contract MainnetForkTest is Test {
     function test_fork_pinnedBlockIsTheOneRecorded() public onFork {
         assertEq(block.number, FORK_BLOCK);
         assertEq(blockhash(FORK_BLOCK - 1) != bytes32(0), true);
-        // the hash of the pinned block itself is not visible to `blockhash` (only parents are);
-        // the recorded constant documents which chain state these assertions were made against.
-        assertTrue(FORK_BLOCK_HASH != bytes32(0));
     }
 
     function test_fork_curatorIsSettledWithTheBriefsConstants() public onFork {
@@ -150,7 +136,8 @@ contract MainnetForkTest is Test {
         assertEq(registry.hasTrait(w, 501), p >= 1000);
         assertEq(registry.hasTrait(w, 502), p >= 3162);
         assertEq(registry.hasTrait(w, 503), p >= 10000);
-        assertEq(registry.hasTrait(w, 601), idmd.balanceOf(w) >= 1);
+        assertFalse(registry.hasTrait(w, 601));
+        assertFalse(registry.hasDirectTrait(w, 601));
     }
 
     function _isDirectId(uint16 id) internal pure returns (bool) {
@@ -160,10 +147,10 @@ contract MainnetForkTest is Test {
 
     // ------------------------------------------------------------------ IDMD
 
-    function test_fork_operatorTraitReadsTheRealCollectionAndGuardsZero() public onFork {
+    function test_fork_operatorTraitRequiresAnAttestationEvenForASeatHolder() public onFork {
         address holder = idmd.ownerOf(1);
         assertTrue(holder != address(0));
-        assertTrue(registry.hasTrait(holder, 601));
+        assertFalse(registry.hasTrait(holder, 601));
         // OpenZeppelin's balanceOf(0) reverts on the real collection; the registry answers false
         vm.expectRevert();
         idmd.balanceOf(address(0));
@@ -248,14 +235,7 @@ contract MainnetForkTest is Test {
         OracleAttestation memory a = _attestationFor(rid, 801, abi.encode(uint256(1)));
         // signed with the right key but for a registry at another address
         Registry other = new Registry(
-            CURATOR,
-            IDMD,
-            IMD,
-            INTAKE_V2,
-            attester,
-            address(registry.renderer()),
-            address(registry.composer()),
-            address(0)
+            CURATOR, IMD, INTAKE_V2, attester, address(registry.renderer()), address(registry.composer()), EXECUTOR
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(ATTESTER_KEY, other.attestationDigest(a));
         vm.prank(WRITER);
@@ -280,7 +260,32 @@ contract MainnetForkTest is Test {
         assertEq(t[2], 202);
         string memory uri = registry.tokenURI(id);
         assertGt(bytes(uri).length, 1000);
-        assertEq(registry.pool(), 0.1 ether, "the mint fee is the pool");
+        assertEq(imd.balanceOf(address(registry)), 0, "the mint fee leaves the Registry");
+    }
+
+    function test_fork_mintForwardsFeeAndPreviewIncludesItWithinLiveLimits() public onFork {
+        uint256 balanceBefore = imd.balanceOf(EXECUTOR);
+        (uint256 sendBefore,,) = IBurnExecutor(EXECUTOR).previewBridge();
+        deal(IMD, alice, 0.1 ether);
+        vm.startPrank(alice);
+        imd.approve(address(registry), 0.1 ether);
+        registry.mintCard();
+        vm.stopPrank();
+        uint256 balanceAfter = imd.balanceOf(EXECUTOR);
+        assertEq(balanceAfter, balanceBefore + 0.1 ether);
+        assertEq(imd.balanceOf(address(registry)), 0);
+        (uint256 sendAfter, uint256 receiveAfter, uint256 nativeFee) = IBurnExecutor(EXECUTOR).previewBridge();
+        assertGt(sendAfter, 0, "live executor is bridgeable at the pinned block");
+        assertGe(sendAfter, sendBefore);
+        assertLe(sendAfter, balanceAfter);
+        assertLe(sendAfter - sendBefore, 0.1 ether);
+        assertGt(receiveAfter, 0);
+        assertGt(nativeFee, 0);
+        // Quote the hypothetical old balance against the same post-mint OFT configuration.
+        // If the send did not grow by the fee, the same live cap must constrain both amounts.
+        (uint256 oldBalanceSend,,) = ExecutorQuote(EXECUTOR).previewBridge(balanceBefore);
+        assertEq(oldBalanceSend, sendBefore);
+        if (sendAfter - sendBefore < 0.1 ether) assertEq(sendAfter, sendBefore, "OFT limit, not a lost fee");
     }
 
     // ------------------------------------------------------------------ helpers
@@ -335,4 +340,8 @@ interface IntakeViews {
 interface IntakeComplete {
     function complete(bytes32 requestId, uint8 status, bytes32 resultHash, string calldata uri, bytes calldata args)
         external;
+}
+
+interface ExecutorQuote {
+    function previewBridge(uint256) external view returns (uint256, uint256, uint256);
 }

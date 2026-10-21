@@ -47,14 +47,22 @@ contract Renderer {
     ///      decode one to packed bytes.
     function _unhex(bytes memory h) internal pure returns (bytes memory out) {
         out = new bytes(h.length / 2);
-        for (uint256 i; i < out.length; ++i) {
-            out[i] = bytes1(_nibble(h[2 * i]) * 16 + _nibble(h[2 * i + 1]));
+        // Only the generator's ASCII hex constants reach this helper.
+        assembly ("memory-safe") {
+            let p := add(h, 32)
+            let dst := add(out, 32)
+            let end := add(dst, mload(out))
+            for {} lt(dst, end) {
+                dst := add(dst, 1)
+                p := add(p, 2)
+            } {
+                let a := byte(0, mload(p))
+                let b := byte(1, mload(p))
+                a := sub(a, add(48, mul(gt(a, 96), 39)))
+                b := sub(b, add(48, mul(gt(b, 96), 39)))
+                mstore8(dst, or(shl(4, a), b))
+            }
         }
-    }
-
-    function _nibble(bytes1 c) internal pure returns (uint8) {
-        uint8 b = uint8(c);
-        return b >= 97 ? b - 87 : b - 48;
     }
 
     error NoCard(uint256 tokenId);
@@ -63,8 +71,8 @@ contract Renderer {
     /// @dev The 25 catalog names of CATALOG.md section 7 (final names, 2026-10-16), packed in catalog order
     ///      with one length byte each; a family's first index and tier count select the entry.
     bytes internal constant NAMES =
-        "SpawnedZero-Shot, hour <= 1Zero-Shot, hour 0Hopper >= 3Hopper >= 5Hopper >= 10Bullfrog >= 1 ETHBullfrog >= 10 ETHBullfrog >= 100 ETHBullfrog >= 800 ETHBenchmarked >= 1000Benchmarked >= 3162Benchmarked >= 10000ArmedUptimeHoldoutFinal TokenHotfixPID #1PID #1000PID #10000PID #19522First thousandTop WeightsPretrained";
-    bytes internal constant NAME_LENS = hex"0714110b0b0c111213131313140506070b0606090a0a0e0b0a";
+        "SpawnedZero-Shot, hour <= 1Zero-Shot, hour 0Hopper >= 3Hopper >= 5Hopper >= 10Bullfrog >= 1 ETHBullfrog >= 10 ETHBullfrog >= 100 ETHBullfrog >= 800 ETHBenchmarked >= 1000Benchmarked >= 3162Benchmarked >= 10000SwarmedUptimeHoldoutFinal TokenHotfixPID #1PID #1000PID #10000PID #19522First thousandTop WeightsPretrained";
+    bytes internal constant NAME_LENS = hex"0714110b0b0c111213131313140706070b0606090a0a0e0b0a";
     bytes internal constant FAMILY_BASE = hex"000103060a0d0e0f1011121718";
     bytes internal constant FAMILY_TIERS = hex"01020304030101010101050101";
 
@@ -93,7 +101,8 @@ contract Renderer {
         return string(abi.encodePacked("data:application/json;base64,", Base64.encode(preimage(c))));
     }
 
-    /// @notice A registry card's metadata URI, read from the registry's public views.
+    /// @notice A rendering from caller-supplied views is not a credential and names no registry.
+    ///         Check hasTrait on the trusted Registry for a credential.
     function tokenURIOf(address registry, uint256 tokenId) external view returns (string memory) {
         return tokenURI(cardOf(registry, tokenId));
     }
@@ -106,7 +115,7 @@ contract Renderer {
         if (claimant == address(0)) revert NoCard(tokenId);
         c.tokenId = tokenId;
         c.claimant = claimant;
-        c.traits = r.traitsOf(claimant);
+        c.traits = _traits(registry, claimant);
         for (uint256 i; i < c.traits.length; ++i) {
             uint16 id = c.traits[i];
             uint256 fam = id / 100;
@@ -124,51 +133,80 @@ contract Renderer {
         // oracle metadata: the true catalog oracle ids (every one is a verified entry), then the shown specs
         uint256 n;
         for (uint256 i; i < c.traits.length; ++i) {
-            if (c.traits[i] >= 701) n++;
+            if (c.traits[i] >= 601) n++;
         }
         c.oracle = new OracleMeta[](n + shown);
         uint256 k;
         for (uint256 i; i < c.traits.length; ++i) {
-            if (c.traits[i] >= 701) c.oracle[k++] = _meta(r, claimant, c.traits[i]);
+            if (c.traits[i] >= 601) c.oracle[k++] = _meta(r, claimant, c.traits[i]);
         }
         for (uint256 i; i < shown; ++i) {
             c.oracle[k++] = _meta(r, claimant, specs[i]);
         }
     }
 
-    /// @dev Reads only what the record prints (V2 item 19 b): the two request ids from `verified`, and the
-    ///      kind, target, window and name picked out of `specOf`'s ABI words without decoding the spec body.
-    ///      `Spec` encodes as twelve head words: kind, target, item, arg, fixedArg, fixedVal, sumArg, op,
-    ///      threshold, fromBlock, toBlock, name (strings as offsets from the head).
-    function _meta(ICardSource r, address claimant, uint16 traitId) internal view returns (OracleMeta memory m) {
-        m.traitId = traitId;
-        (m.requestId, m.oracleRequestId,,) = r.verified(claimant, traitId);
-        (bool ok, bytes memory ret) = address(r).staticcall(abi.encodeWithSelector(0x701ce949, traitId));
-        if (!ok || ret.length < 13 * 32) revert UnknownTrait(traitId);
+    /// @dev Copy at most 25 catalog ids, even when a caller-supplied source returns a longer array.
+    function _traits(address registry, address claimant) internal view returns (uint16[] memory ids) {
+        bytes memory input = abi.encodeCall(ICardSource.traitsOf, (claimant));
+        bytes memory ret = new bytes(27 * 32);
+        bool ok;
+        uint256 size;
         uint256 head;
-        uint256 nameAt;
-        uint256 nameLen;
+        uint256 n;
         assembly ("memory-safe") {
-            head := add(add(ret, 0x20), mload(add(ret, 0x20)))
-            mstore(add(m, 0x20), and(mload(head), 0xff)) // kind
-            mstore(add(m, 0x80), and(mload(add(head, 0x20)), 0xffffffffffffffffffffffffffffffffffffffff)) // target
-            mstore(add(m, 0x40), and(mload(add(head, 0x120)), 0xffffffffffffffff)) // fromBlock
-            mstore(add(m, 0x60), and(mload(add(head, 0x140)), 0xffffffffffffffff)) // toBlock
-            nameAt := add(head, mload(add(head, 0x160)))
-            nameLen := mload(nameAt)
+            ok := staticcall(gas(), registry, add(input, 32), mload(input), add(ret, 32), mload(ret))
+            size := returndatasize()
+            head := mload(add(ret, 32))
+            n := mload(add(ret, 64))
         }
-        if (nameAt + 32 + nameLen > _end(ret)) revert UnknownTrait(traitId);
-        bytes memory name = new bytes(nameLen);
-        assembly ("memory-safe") {
-            mcopy(add(name, 0x20), add(nameAt, 0x20), nameLen)
+        if (!ok || size < 64 || head != 32) revert UnknownTrait(0);
+        if (n > 25) n = 25;
+        if (size < 64 + 32 * n) revert UnknownTrait(0);
+        ids = new uint16[](n);
+        uint256 count;
+        for (uint256 i; i < n; ++i) {
+            uint256 id;
+            assembly ("memory-safe") { id := mload(add(add(ret, 96), mul(i, 32))) }
+            uint256 fam = id / 100;
+            uint256 tier = id % 100;
+            if (fam < 1 || fam > 13 || tier < 1 || tier > uint8(FAMILY_TIERS[fam - 1])) continue;
+            ids[count++] = uint16(id);
         }
-        m.name = string(name);
+        assembly ("memory-safe") { mstore(ids, count) }
     }
 
-    function _end(bytes memory ret) internal pure returns (uint256 e) {
+    /// @dev Bound returndata before copying and validate every relative offset before reading.
+    ///      The window comes from verified(), including the operator's stored living window.
+    function _meta(ICardSource r, address claimant, uint16 traitId) internal view returns (OracleMeta memory m) {
+        m.traitId = traitId;
+        (m.requestId, m.oracleRequestId, m.fromBlock, m.toBlock) = r.verified(claimant, traitId);
+        bytes memory input = abi.encodeWithSelector(0x701ce949, traitId);
+        bytes memory ret = new bytes(1024);
+        bool ok;
+        uint256 size;
         assembly ("memory-safe") {
-            e := add(add(ret, 0x20), mload(ret))
+            ok := staticcall(gas(), r, add(input, 32), mload(input), add(ret, 32), 1024)
+            size := returndatasize()
         }
+        if (!ok || size < 13 * 32 || size > 1024) revert UnknownTrait(traitId);
+        uint256 head;
+        assembly ("memory-safe") { head := mload(add(ret, 32)) }
+        if (head < 32 || head > size - 12 * 32) revert UnknownTrait(traitId);
+        uint256 nameAt;
+        assembly ("memory-safe") {
+            let ptr := add(add(ret, 32), head)
+            mstore(add(m, 32), and(mload(ptr), 0xff))
+            mstore(add(m, 128), and(mload(add(ptr, 32)), 0xffffffffffffffffffffffffffffffffffffffff))
+            nameAt := mload(add(ptr, 352))
+        }
+        if (nameAt < 12 * 32 || nameAt > size - head - 32) revert UnknownTrait(traitId);
+        nameAt += head;
+        uint256 nameLen;
+        assembly ("memory-safe") { nameLen := mload(add(add(ret, 32), nameAt)) }
+        if (nameLen > 32 || nameLen > size - nameAt - 32) revert UnknownTrait(traitId);
+        bytes memory name = new bytes(nameLen);
+        assembly ("memory-safe") { mcopy(add(name, 32), add(add(ret, 64), nameAt), nameLen) }
+        m.name = string(name);
     }
 
     /// @notice The metadata JSON before Base64, public so a test can diff it against the golden.
@@ -341,7 +379,8 @@ contract Renderer {
     }
 
     function _colour(uint256 i) internal pure returns (uint256) {
-        if (i <= 5) return HiveData.F_COLOUR_DIRECT;
+        if (i < 5) return HiveData.F_COLOUR_DIRECT;
+        if (i == 5) return HiveData.F_COLOUR_PANEL;
         if (i <= 10) return HiveData.F_COLOUR_CHAIN;
         return i == 11 ? HiveData.F_COLOUR_SHARED : HiveData.F_COLOUR_PANEL;
     }
@@ -350,7 +389,7 @@ contract Renderer {
         return top == 202 || top == 801 || top == 901 || top == 1001 || top == 1201 || (top >= 1101 && top <= 1104);
     }
 
-    /// @dev Rings of family i: slot s = 0 for Armed, 1..5 for Spawned..Benchmarked, else the family index;
+    /// @dev Rings of family i: slot s = 0 for Swarmed, 1..5 for Spawned..Benchmarked, else the family index;
     ///      k = #{d in 0..2 : 13d + s < shown}.
     function _rings(uint256 shown, uint256 i) internal pure returns (uint256) {
         uint256 s = i == 5 ? 0 : (i < 5 ? i + 1 : i);
@@ -461,15 +500,15 @@ contract Renderer {
     /// @dev The oracle record: id, template, evidence, window, panel minima, the two request ids, the
     ///      target and the name. The spec body (`item`, `arg`, `fixedArg`, `sumArg`, `fixedVal`, `op`,
     ///      `threshold`) stays readable through `Registry.specOf(id)`. Kinds 1, 2 and 4 ask a 5 / 3
-    ///      panel; kind 3 (a ranked list) and kind 5 (panel evidence) 11 / 7.
+    ///      panel; kinds 3, 5 and 6 ask 11 / 7.
     function _one(Buf memory b, OracleMeta memory m) internal pure {
-        bool panel = m.kind == 3 || m.kind == 5;
+        bool panel = m.kind == 3 || m.kind == 5 || m.kind == 6;
         _put(b, '{"traitId":');
         _put(b, bytes(Strings.toString(m.traitId)));
         _put(b, ',"template":"T');
         _put(b, bytes(Strings.toString(m.kind)));
         _put(b, '","evidence":"');
-        _put(b, m.kind == 5 ? bytes("panel") : bytes("chain"));
+        _put(b, (m.kind == 5 || m.kind == 6) ? bytes("panel") : bytes("chain"));
         _put(b, '","fromBlock":');
         _put(b, bytes(Strings.toString(m.fromBlock)));
         _put(b, ',"toBlock":');
@@ -490,14 +529,14 @@ contract Renderer {
     }
 
     /// @notice JSON string escaping that also neutralises markup: `"` and `\` are escaped, and every
-    ///         byte below 0x20 plus `<`, `>`, `&` becomes a `\u00XX` escape, so a hostile spec string
+    ///         byte below 0x20 plus `<`, `>`, `&`, single quote becomes a `\u00XX` escape, so a hostile spec string
     ///         can break neither the JSON nor an SVG a viewer might paste it into.
     function escapeJson(bytes memory s) internal pure returns (bytes memory out) {
         uint256 extra;
         for (uint256 i; i < s.length; ++i) {
             bytes1 ch = s[i];
             if (ch == '"' || ch == "\\") extra += 1;
-            else if (ch < 0x20 || ch == "<" || ch == ">" || ch == "&") extra += 5;
+            else if (ch < 0x20 || ch == "<" || ch == ">" || ch == "&" || ch == "'") extra += 5;
         }
         if (extra == 0) return s;
         out = new bytes(s.length + extra);
@@ -507,7 +546,7 @@ contract Renderer {
             if (ch == '"' || ch == "\\") {
                 out[o++] = "\\";
                 out[o++] = ch;
-            } else if (ch < 0x20 || ch == "<" || ch == ">" || ch == "&") {
+            } else if (ch < 0x20 || ch == "<" || ch == ">" || ch == "&" || ch == "'") {
                 out[o++] = "\\";
                 out[o++] = "u";
                 out[o++] = "0";

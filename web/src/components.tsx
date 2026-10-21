@@ -33,9 +33,9 @@ export function MiniCard({id,size=96}:{id:number;size?:number}){
 }
 export function CardPair(){return <figure className="card-pair"><div><MiniCard id={0}/><MiniCard id={101}/></div><figcaption>The card is the artifact. The fact belongs to the wallet: the same card, empty and with Spawned 101 lit.</figcaption></figure>;}
 /* COPY: draft, owner approval pending (round 2, F-18.29): the four trait classes and how a fact gets sworn. */
-export const PROOF_OF_SWEAR='Proof of swear: a fact is sworn when enough independent IMD agents answer the same question about a wallet the same way and sign it. The Registry checks the signature, the question, the quorum and the block window before it records anything. Direct facts need no swearing: Curator reads freeze at mint, alongside the IDMD seat snapshot.';
+export const PROOF_OF_SWEAR='Proof of swear: a fact is sworn when enough independent IMD agents answer the same question about a wallet the same way and sign it. The Registry checks the signature, the question, the quorum and the block window before it records anything. Direct facts need no swearing: Curator reads freeze at mint.';
 export const CLASS_CARDS:{cls:Evidence;title:string;how:string}[]=[
- {cls:'direct',title:'Direct facts',how:'Curator facts freeze at mint. Armed records an IDMD seat held at mint. Before minting, Curator facts are read live and Armed is false; no oracle request is needed.'},
+ {cls:'direct',title:'Direct facts',how:'Curator facts freeze at mint. Before minting, Curator facts are read live; no oracle request is needed.'},
  {cls:'chain-proven',title:'Chain-proven facts',how:'A recipe over a fixed block window: count or sum the Curator’s events for a wallet. At least 5 IMD agents rerun it and 3 must agree; the signed answer is stored.'},
  {cls:'shared',title:'Shared facts',how:'One ranked list for everyone, the top 32 by summed weight. Requested once at the oracle price; each member applies the same attested list for gas.'},
  {cls:'panel',title:'Panel facts',how:'Evidence the chain cannot replay cheaply, such as an account’s nonce at the launch block. 11 agents check it and 7 must agree.'},
@@ -45,7 +45,7 @@ export function ClassCards(){return <div className="class-cards" aria-label="The
 export const STORIES:{title:string;steps:[string,string,string][]}[]=[
  {title:'How it works for a wallet: mint a card, add facts, swear new ones',steps:[
   ['01','Mint once','0.10 IMD mints the card. It shows every fact the wallet has and updates itself; there is no second mint.'],
-  ['02','Add facts','Direct traits freeze at mint. A pool claim is free once a day for list members; a paid upgrade asks the oracle at the live price, spent whatever the answer.'],
+  ['02','Add facts','Direct traits freeze at mint. A paid upgrade asks the oracle at the live price, spent whatever the answer.'],
   ['03','Swear a new fact','Register a community trait for 6.4 IMD: a recipe anyone can claim against. Its first claim is a normal request at the live price.'],
  ]},
  {title:'How it works for a curator: finding real wallets',steps:[
@@ -74,7 +74,7 @@ export function InfoBox({who,cost,risk,benefit}:{who:string;cost:string;risk:str
 /* COPY: draft, owner approval pending (round 2, F-18.18): the minimal flow of a fact. */
 export const FLOW:[string,string][][]=[
  [['Your wallet','did things onchain'],['Direct facts','read live, free'],['Your card','shows them']],
- [['Request a fact','pool claim or paid upgrade'],['IMD agents verify','a panel reruns the recipe, a quorum signs'],['Registry stores it','the sworn answer, forever'],['Your card updates itself','no second mint']],
+ [['Request a fact','paid upgrade'],['IMD agents verify','a panel reruns the recipe, a quorum signs'],['Registry stores it','the sworn answer, forever'],['Your card updates itself','no second mint']],
 ];
 export function FlowChart(){return <div className="flow" role="img" aria-label="How a fact reaches a card: direct facts are read live; requested facts are verified by IMD agents, stored by the Registry and shown by the card">{FLOW.map((row,i)=><ol key={i} className="flow-row">{row.map(([title,sub])=><li key={title}><strong>{title}</strong><span>{sub}</span></li>)}</ol>)}</div>;}
 export function PaymentChoice({payment,setPayment,name}:{payment:'IMD'|'ETH';setPayment:(p:'IMD'|'ETH')=>void;name:string}){

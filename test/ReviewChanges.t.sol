@@ -126,7 +126,7 @@ contract ReviewChangesTest is Base {
     function test_unknownRequestStillPrecedesDynamicSizeChecks() public {
         bytes32 rid = ask(C1A1, 701);
         OracleAttestation memory a = attestationFor(rid, new bytes(262_144));
-        vm.warp(T0 + 31 days);
+        vm.warp(T0 + 31 days + 1);
         vm.prank(C1A1);
         registry.abandon(rid);
         bytes32 successor = ask(C1A1, 701);
@@ -194,13 +194,13 @@ contract ReviewChangesTest is Base {
             if (kind == 2) s.sumArg = "value";
             s.fixedVal = value;
             fund(C1A1, registry.SPEC_FEE());
-            uint256 poolBefore = registry.pool();
+            uint256 registryBalanceBefore = imd.balanceOf(address(registry));
             uint256 balanceBefore = imd.balanceOf(C1A1);
             uint16 nextId = registry.nextSpecId();
             vm.prank(C1A1);
             vm.expectRevert(abi.encodeWithSelector(Composer.BadSpec.selector, "fixedVal"));
             registry.registerSpec(s, 0);
-            assertEq(registry.pool(), poolBefore);
+            assertEq(imd.balanceOf(address(registry)), registryBalanceBefore);
             assertEq(imd.balanceOf(C1A1), balanceBefore);
             assertEq(registry.nextSpecId(), nextId);
 

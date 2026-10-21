@@ -1,8 +1,16 @@
 # Deployments
 
+## Ethereum mainnet replacement: source prepared 2026-10-21
+
+This assignment implements the replacement described by docs/V3.md. It deploys no transaction and asserts no new address. The 2026-10-20 deployment is replaced by this release, was never announced, and stays on chain; its exact record follows as history. Confirmation of the new deployment is pending the separate manifest, independent review and deployment services.
+
+The deployment order is Renderer (no arguments), Composer (no arguments), then Registry with seven addresses: Curator `0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91`, IMD `0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7`, Intake v2 `0xa43e6f75ee006411f79ac1c84120606c2330de82`, attester `0x5598aa9146215bc13eb26f2c692ad1461fd32982`, new Renderer, new Composer, executor `0xe29386719C155B6847aD5a4E97C6674f10ffc750`. No IDMD constructor argument, owner or ETH value exists.
+
+README.md documents deployment checks and external responsibilities; test/NOTES.md records sizes and gas. The constructor's mandatory external executor-code check and the generic empty-chain probe must be resolved in launch review. No new `sworn-verify` gate, factory gas simulation, hosted URL, source attestation or independent audit is claimed by these source checks. The supplied 2026-10-21 oracle lab stands without a rerun. The historical manifest and signed artifacts are preserved for the service to replace, not relabeled as this build.
+
 ## Ethereum mainnet (chainId 1), 2026-10-20: the deployment of the docs/V2.md release, IMD swarm launch #2341
 
-- **Status:** live. Built, audited and deployed by the IMD swarm as one `workflow.open` (workflow `7e7dbd09-598a-41cf-8204-00b52caddb08`,
+- **Status:** replaced in the source release below, never announced; remains on chain. Built, audited and deployed by the IMD swarm as one `workflow.open` (workflow `7e7dbd09-598a-41cf-8204-00b52caddb08`,
   contracts job `472763cf-7481-495d-950c-000db51d562f`, paid 2026-10-20 19:51 UTC by pawai.eth, 0.5 IMD, order `b621f047`).
 - **Input:** this repository at tag `v2-base` = commit `007fbeb702613345389bc842a4005c07f3966ab1` (docs/V2.md, ninth cut).
 - **Source as deployed:** commit `832cc45f59acdda805b51799647be24c0cae9741` in

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
+import {MockBurnExecutor} from "./mocks/MockBurnExecutor.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -77,13 +78,12 @@ contract AttestationsTest is Test {
             "Registry.sol:Registry",
             abi.encode(
                 address(new MockCurator()),
-                address(new MockIDMD()),
                 address(imdMock),
                 address(new MockIntake(address(imdMock))),
                 ATTESTER,
                 address(renderer),
                 address(composer),
-                address(0)
+                address(new MockBurnExecutor())
             ),
             where
         );

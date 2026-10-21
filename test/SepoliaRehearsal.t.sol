@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
+import {MockBurnExecutor} from "./mocks/MockBurnExecutor.sol";
 
 import {Base} from "./Base.t.sol";
 import {Composer} from "../src/Composer.sol";
+import {MockBurnExecutor} from "./mocks/MockBurnExecutor.sol";
 import {Registry} from "../src/Registry.sol";
 import {Renderer} from "../src/Renderer.sol";
 import {RendererHarness} from "./mocks/RendererHarness.sol";
@@ -26,17 +28,17 @@ contract SepoliaRehearsalTest is Base {
         intake = new MockIntake(address(imd));
         renderer = new RendererHarness();
         composer = new Composer();
+        executor = new MockBurnExecutor();
         deployCodeTo(
             "Registry.sol:Registry",
             abi.encode(
                 SEPOLIA_CURATOR,
-                address(idmd),
                 address(imd),
                 address(intake),
                 attester,
                 address(renderer),
                 address(composer),
-                address(0)
+                address(executor)
             ),
             REGISTRY_ADDR
         );
@@ -56,7 +58,7 @@ contract SepoliaRehearsalTest is Base {
         vm.stopPrank();
         assertEq(registry.nextSpecId(), 10003);
         assertEq(imd.balanceOf(C1A1), 0);
-        assertEq(imd.balanceOf(address(registry)), 2 * fee, "both registration fees pulled");
+        assertEq(imd.balanceOf(address(registry)), 0, "both registration fees forwarded");
         assertEq(abi.encode(registry.specOf(10001)), abi.encode(game));
         assertEq(abi.encode(registry.specOf(10002)), abi.encode(nonce));
     }
@@ -115,7 +117,7 @@ contract SepoliaRehearsalTest is Base {
         vm.prank(C1A1);
         assertEq(registry.registerSpec(_nonceSpec(height - 7200), 0), 10002);
         assertEq(imd.balanceOf(C1A1), 0);
-        assertEq(imd.balanceOf(address(registry)), 2 * registry.SPEC_FEE());
+        assertEq(imd.balanceOf(address(registry)), 0);
     }
 
     function test_heightBoundCoversMeasuredMainnetHeadsAndAnchor() public {
@@ -166,7 +168,7 @@ contract SepoliaRehearsalTest is Base {
         }
     }
 
-    function test_directReadsStillUseTheSepoliaCuratorAndIDMD() public {
+    function test_directReadsStillUseTheSepoliaCurator() public {
         assertEq(address(registry.curator()), SEPOLIA_CURATOR);
         deployCodeTo("Mocks.sol:MockCurator", CURATOR_ADDR);
         MockCurator mainnetCurator = MockCurator(CURATOR_ADDR);
@@ -182,9 +184,9 @@ contract SepoliaRehearsalTest is Base {
         }
         assertFalse(registry.hasTrait(C1A1, 601));
         idmd.setBalance(C1A1, 1);
-        assertFalse(registry.hasTrait(C1A1, 601), "Armed is a snapshot at mint: false without a card");
+        assertFalse(registry.hasTrait(C1A1, 601), "Swarmed is a snapshot at mint: false without a card");
         mint(C1A1);
-        assertTrue(registry.hasTrait(C1A1, 601));
+        assertFalse(registry.hasTrait(C1A1, 601));
     }
 
     function test_sepoliaClaimantVerifies701ThroughMockIntake() public {

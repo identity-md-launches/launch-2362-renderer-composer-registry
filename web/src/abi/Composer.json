@@ -96,7 +96,7 @@
         ]
       }
     ],
-    "stateMutability": "pure"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -217,11 +217,6 @@
         "name": "curator",
         "type": "address",
         "internalType": "contract IWhitelistCurator"
-      },
-      {
-        "name": "idmd",
-        "type": "address",
-        "internalType": "contract IIDMD"
       }
     ],
     "outputs": [

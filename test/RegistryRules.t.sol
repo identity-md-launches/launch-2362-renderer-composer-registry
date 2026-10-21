@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
+import {MockBurnExecutor} from "./mocks/MockBurnExecutor.sol";
 
 import {Base} from "./Base.t.sol";
 import {Registry} from "../src/Registry.sol";
@@ -17,15 +18,15 @@ contract WritingPriceIntake {
     }
 }
 
-/// @notice Registry step 2: fees, deployment checks, membership and shared pool limits.
 contract RegistryRulesTest is Base {
     address internal alice = address(0xA11CE);
     address internal bob = address(0xB0B);
 
     function _deploy(address asset, address intake_) internal returns (Registry) {
-        return new Registry(
-            CURATOR_ADDR, address(idmd), asset, intake_, attester, address(renderer), address(composer), address(0)
-        );
+        return
+            new Registry(
+                CURATOR_ADDR, asset, intake_, attester, address(renderer), address(composer), address(executor)
+            );
     }
 
     function _member(address wallet) internal {
@@ -45,25 +46,23 @@ contract RegistryRulesTest is Base {
 
     function test_constructorRejectsPartiallyCodedDependencyFloor() public {
         address bare = makeAddr("empty dependency");
-        address[4] memory coded = [CURATOR_ADDR, address(idmd), address(imd), address(intake)];
+        address[3] memory coded = [CURATOR_ADDR, address(imd), address(intake)];
         for (uint256 i; i < coded.length; ++i) {
-            address[4] memory args = [bare, bare, bare, bare];
+            address[3] memory args = [bare, bare, bare];
             args[i] = coded[i];
             // With only IDMD coded the Curator call has no return data; otherwise IDMD fails first.
-            if (i == 1) vm.expectRevert(bytes(""));
-            else vm.expectRevert(Registry.DependencyHasNoCode.selector);
-            new Registry(args[0], args[1], args[2], args[3], attester, address(renderer), address(composer), address(0));
+            vm.expectRevert();
+            new Registry(args[0], args[1], args[2], attester, address(renderer), address(composer), address(executor));
         }
     }
 
     function test_constructorRejectsEachSingleMistypedDependency() public {
         address bare = makeAddr("mistyped dependency");
-        for (uint256 i; i < 4; ++i) {
-            address[4] memory args = [CURATOR_ADDR, address(idmd), address(imd), address(intake)];
+        for (uint256 i; i < 3; ++i) {
+            address[3] memory args = [CURATOR_ADDR, address(imd), address(intake)];
             args[i] = bare;
-            if (i == 1) vm.expectRevert(Registry.DependencyHasNoCode.selector);
-            else vm.expectRevert(bytes(""));
-            new Registry(args[0], args[1], args[2], args[3], attester, address(renderer), address(composer), address(0));
+            vm.expectRevert();
+            new Registry(args[0], args[1], args[2], attester, address(renderer), address(composer), address(executor));
         }
     }
 
@@ -104,7 +103,7 @@ contract RegistryRulesTest is Base {
         Spec memory s = t1Spec(CURATOR_ADDR, "Community");
         vm.prank(alice);
         uint16 id = registry.registerSpec(s, 0);
-        assertEq(registry.pool(), 6.4 ether);
+        assertEq(imd.balanceOf(address(registry)), 0);
         assertEq(imd.balanceOf(alice), 0.5 ether);
         assertEq(imd.allowance(alice, address(registry)), 0);
         vm.prank(alice);
@@ -113,9 +112,8 @@ contract RegistryRulesTest is Base {
         registry.upgrade(_one(id), PRICE);
         assertEq(imd.balanceOf(alice), 0);
         assertEq(imd.balanceOf(address(intake)), PRICE);
-        assertEq(registry.pool(), 6.4 ether, "only the registration fee stays in the pool");
+        assertEq(imd.balanceOf(address(registry)), 0, "fees leave the Registry");
         assertTrue(registry.pendingOf(alice, id) != 0);
-        assertEq(registry.lastPoolDay(alice), 0, "paid requests do not use the daily allowance");
     }
 
     function test_specRequiresFullFeeAndAllowance() public {
@@ -124,7 +122,7 @@ contract RegistryRulesTest is Base {
         vm.prank(alice);
         vm.expectRevert();
         registry.registerSpec(s, 0);
-        assertEq(registry.pool(), 0);
+        assertEq(imd.balanceOf(address(registry)), 0);
         assertEq(registry.nextSpecId(), 10001);
         imd.mint(alice, 1);
         vm.prank(alice);
@@ -132,7 +130,7 @@ contract RegistryRulesTest is Base {
         vm.prank(alice);
         vm.expectRevert();
         registry.registerSpec(s, 0);
-        assertEq(registry.pool(), 0);
+        assertEq(imd.balanceOf(address(registry)), 0);
         assertEq(registry.nextSpecId(), 10001);
         vm.prank(alice);
         imd.approve(address(registry), 6.4 ether);

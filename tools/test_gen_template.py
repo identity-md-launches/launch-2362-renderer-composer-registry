@@ -61,7 +61,7 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual((40**8).bit_length() - 41, 2)
 
     def test_slot_layout_and_levels(self) -> None:
-        self.assertEqual(gen.family_centre(5), (500.0, 480.0), "Armed sits in the centre")
+        self.assertEqual(gen.family_centre(5), (500.0, 480.0), "Swarmed sits in the centre")
         self.assertEqual(gen.family_centre(0), (500.0, 480.0 - gen.H), "Spawned sits above it")
         self.assertEqual(gen.family_centre(12), (500.0 - 144, 480.0 - 1.5 * gen.H))
         self.assertEqual(gen.H, math.sqrt(3) * 96)
@@ -153,7 +153,7 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual(gen.hive_svg((0,) * 13, 0).count("<circle"), 0)
 
     def test_hive_svg_opacities_by_ring_count(self) -> None:
-        top = (0,) * 5 + (601,) + (0,) * 7  # Armed, the centre slot, lit
+        top = (0,) * 5 + (601,) + (0,) * 7  # Swarmed, the centre slot, lit
         for count, expected in ((0, ("1.00",)), (1, ("0.35", "1.00")), (14, ("0.35", "0.68", "1.00")), (27, ("0.35", "0.57", "0.78", "1.00"))):
             svg = gen.hive_svg(top, count)
             self.assertEqual(tuple(re.findall(r"fill-opacity='([^']*)'", svg)), expected, count)
@@ -242,8 +242,8 @@ class GeneratorTest(unittest.TestCase):
                     cname = next(m.spec.name for m in data.oracle if m.traitId == trait_id)
                     self.assertEqual(metadata["attributes"][15 + index], {"trait_type": f"Community {trait_id}", "value": cname})
                 for meta in metadata["oracle"]:
-                    self.assertEqual(meta["minPanelSize"], 11 if meta["template"] in ("T3", "T5") else 5)
-                    self.assertEqual(meta["minQuorum"], 7 if meta["template"] in ("T3", "T5") else 3)
+                    self.assertEqual(meta["minPanelSize"], 11 if meta["template"] in ("T3", "T5", "T6") else 5)
+                    self.assertEqual(meta["minQuorum"], 7 if meta["template"] in ("T3", "T5", "T6") else 3)
                     self.assertNotIn("item", meta, "the shrunk oracle record carries no spec body")
                     self.assertIn("name", meta)
                 self.assertEqual(svg, gen.hive_svg(data.top, data.communityCount).encode("ascii"))
@@ -252,7 +252,7 @@ class GeneratorTest(unittest.TestCase):
                 self.assertEqual(metadata["image"], "data:image/svg+xml," + gen.percent_encode(svg))
                 self.assertEqual(uri, b"data:application/json;base64," + gen.base64.b64encode(preimage))
         width = json.loads(gen.render_case(self.template, gen.CASES["synthetic_width"])[0])
-        self.assertEqual(width["oracle"][0]["name"], 'a"b\\c<d>&e')
+        self.assertEqual(width["oracle"][0]["name"], 'a"b\\c<d>&e\'')
         self.assertNotIn(b"<script>", gen.render_case(self.template, gen.CASES["synthetic_width"])[0])
 
     def test_golden_cases_cover_the_requested_states(self) -> None:

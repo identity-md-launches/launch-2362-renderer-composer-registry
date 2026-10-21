@@ -1,42 +1,40 @@
 import { decodeEventLog, decodeFunctionData, encodeFunctionData, parseAbiItem, type Address, type Hex, type TransactionReceipt } from 'viem';
 import { A, address, registryAbi, erc20Abi, deployment } from './config';
 import { assertWallet, send, type Wallet } from './wallet';
-import { reg, read, integrity, readBurn, livePrice, type Reader } from './chain';
+import { reg, read, integrity, livePrice, type Reader } from './chain';
 import { quoteExactImd, swapCalldata, type SwapQuote } from './swap';
 import { units } from './format';
 import { CHAIN_IDS } from './catalog';
 
-export type Plan={key:string;label:string;data:Hex;amount:bigint;maxPrice?:bigint;sponsored?:boolean;spec?:boolean;shared?:boolean};
+export type Plan={key:string;label:string;data:Hex;amount:bigint;maxPrice?:bigint;spec?:boolean;shared?:boolean};
 export type Phase='swap'|'approve'|'registry';
 export type StepState='ready'|'awaiting wallet'|'pending'|'confirmed'|'rejected'|'failed'|'replaced'|'unknown';
-export type Journal={version:1;deploymentId:string;key:string;label:string;data:Hex;amount:string;maxPrice?:string;sponsored?:boolean;spec?:boolean;payment:'IMD'|'ETH';steps:Partial<Record<Phase,{state:StepState;hash?:Hex;data?:Hex;to?:Address;value?:string}>>;registeredId?:number;outcomes?:string[]};
+export type Journal={version:1;deploymentId:string;key:string;label:string;data:Hex;amount:string;maxPrice?:string;spec?:boolean;payment:'IMD'|'ETH';steps:Partial<Record<Phase,{state:StepState;hash?:Hex;data?:Hex;to?:Address;value?:string}>>;registeredId?:number;outcomes?:string[]};
 const JOURNAL_KEY='sworn.transaction.'+deployment.launchId;
 export function loadJournal():Journal|undefined {
  try {
   const v=JSON.parse(sessionStorage.getItem(JOURNAL_KEY)??'null');
   if(v?.version!==1||v.deploymentId!==deployment.launchId||!['IMD','ETH'].includes(v.payment)||!/^\d+$/.test(v.amount)||!/^0x[0-9a-fA-F]+$/.test(v.data)||!v.steps)return;
   const decoded=decodeFunctionData({abi:registryAbi,data:v.data});
-  if(!['mintCard','upgrade','registerSpec','requestSharedFact','applySharedFact','claimSponsored','sponsor'].includes(decoded.functionName))return;
+  if(!['mintCard','upgrade','registerSpec','requestSharedFact','applySharedFact'].includes(decoded.functionName))return;
   return v as Journal;
  }catch{return;}
 }
 export function saveJournal(j:Journal){sessionStorage.setItem(JOURNAL_KEY,JSON.stringify(j));}
 export function clearJournal(){sessionStorage.removeItem(JOURNAL_KEY);}
-export function newJournal(plan:Plan,payment:'IMD'|'ETH'):Journal {return {version:1,deploymentId:deployment.launchId,key:plan.key,label:plan.label,data:plan.data,amount:plan.amount.toString(),maxPrice:plan.maxPrice?.toString(),sponsored:plan.sponsored,spec:plan.spec,payment,steps:{}};}
+export function newJournal(plan:Plan,payment:'IMD'|'ETH'):Journal {return {version:1,deploymentId:deployment.launchId,key:plan.key,label:plan.label,data:plan.data,amount:plan.amount.toString(),maxPrice:plan.maxPrice?.toString(),spec:plan.spec,payment,steps:{}};}
 export function validateIntent(journal:Journal){
  const call=decodeFunctionData({abi:registryAbi,data:journal.data});
  const args=call.args as readonly unknown[]|undefined;
- let amount:bigint;let maxPrice:bigint|undefined;let sponsored=false;let spec=false;
+ let amount:bigint;let maxPrice:bigint|undefined;let spec=false;
  if(journal.deploymentId!==deployment.launchId)throw new Error('Stored flow belongs to another deployment.');
  if(call.functionName==='mintCard')amount=100000000000000000n;
  else if(call.functionName==='registerSpec'){amount=6400000000000000000n;spec=true;}
  else if(call.functionName==='upgrade'){maxPrice=args![1] as bigint;amount=BigInt((args![0] as unknown[]).length)*maxPrice;}
  else if(call.functionName==='requestSharedFact'){maxPrice=args![1] as bigint;amount=maxPrice;}
- else if(call.functionName==='claimSponsored'){amount=0n;sponsored=true;maxPrice=args![1] as bigint;}
  else if(call.functionName==='applySharedFact')amount=0n;
- else if(call.functionName==='sponsor'){amount=args![0] as bigint;if(amount<=0n)throw Error('Donation must be greater than zero.');}
  else throw new Error('Unsupported Registry operation in the recovered flow.');
- if(BigInt(journal.amount)!==amount || (journal.maxPrice===undefined?undefined:BigInt(journal.maxPrice))!==maxPrice || !!journal.sponsored!==sponsored || !!journal.spec!==spec)throw new Error('The stored intent does not match its Registry calldata. Review the flow before signing.');
+ if(BigInt(journal.amount)!==amount || (journal.maxPrice===undefined?undefined:BigInt(journal.maxPrice))!==maxPrice || !!journal.spec!==spec)throw new Error('The stored intent does not match its Registry calldata. Review the flow before signing.');
 }
 async function checkEligibility(client:Reader,wallet:Wallet,journal:Journal){
  const call=decodeFunctionData({abi:registryAbi,data:journal.data});
@@ -45,7 +43,7 @@ async function checkEligibility(client:Reader,wallet:Wallet,journal:Journal){
   if(await reg<bigint>(client,'tokenOf',[wallet.account])!==0n)throw new Error('AlreadyMinted');
  }else if(call.functionName==='upgrade'){
   for(const id of args![0] as number[]){
-   if(id<10001&&!CHAIN_IDS.includes(id)&&id!==1301)throw new Error('Choose a catalog chain id, 1301 or a personal community spec. Shared facts use request/apply.');
+   if(id<10001&&!CHAIN_IDS.includes(id)&&id!==1301&&id!==601)throw new Error('Choose a catalog chain id, 601, 1301 or a personal community spec. Shared facts use request/apply.');
    if(id>=10001){const spec=await reg<{kind:number}>(client,'specOf',[id]);if(![1,2,4,5].includes(spec.kind))throw new Error('Shared community specs use the shared request/apply procedure.');}
    const [verified,pending]=await Promise.all([reg<boolean>(client,'hasTrait',[wallet.account,id]),reg<Hex>(client,'pendingOf',[wallet.account,id])]);
    if(verified)throw new Error('AlreadyVerified');
@@ -82,20 +80,12 @@ export function receivedImd(receipt:Pick<TransactionReceipt,'logs'>,recipient:Ad
 export function friendlyError(error:unknown) {
  const raw=error instanceof Error ? error.message : String(error);
  const cases:[string,string][]=[
-  ['PoolDailyLimit','You already used the pool today (UTC). Try after the next UTC day.'],
-  ['PoolTooSmall','The pool cannot cover the current oracle price. Use a paid upgrade or wait for funding.'],
-  ['PoolAlreadyUsed','This trait is reserved or already verified through the pool. Failed requests release the reservation; retry on a later UTC day.'],
-  ['PoolDrawTooLarge','The price exceeds an eighth of the pool or the 2 IMD draw cap. Use a paid upgrade or wait for funding.'],
-  ['PoolLifetimeLimit','This wallet already has nine verified sponsored traits. Use a paid upgrade.'],
   ['ZeroPrice','The live Intake price is zero. Requests are unavailable until it changes.'],
   ['UnexpectedSpecId','Another registration took the reviewed id. Prepare the spec again to review the next id.'],
-  ['NotMember','This wallet is not in WhitelistCurator.sol. Use a paid upgrade.'],
   ['AlreadyPending','This trait already has a pending request. Check it in Explorer.'],
   ['AlreadyVerified','This fact is already verified. Check it in Explorer.'],
   ['AlreadyMinted','This wallet already minted its card. Open Explorer.'],
   ['PriceAboveMax','The oracle price changed. Refresh prices and prepare a new request.'],
-  ['BurnFeeRequired','The LayerZero fee changed. Refresh the burn preview and try again.'],
-  ['BurnRefundFailed','The connected contract wallet rejected the ETH refund. Use a wallet that accepts ETH.'],
   ['BadSpec','The spec does not meet the template rules. Check its name, ABI item, exact threshold and historical window, then try again.'],
   ['NotASharedFact','This id is not a shared fact. Use a paid upgrade for community kinds 1, 2, 4 and 5.'],
   ['NotInList','The connected wallet is not in the attested head of this shared list. Check the original answer.'],
@@ -105,7 +95,6 @@ export function friendlyError(error:unknown) {
  ];
  return cases.find(([key])=>raw.includes(key))?.[1] ?? (raw.length>240 ? raw.slice(0,240) : raw);
 }
-export const BURN_REASONS:Record<number,string>={1:'preview unavailable or reverted',2:'amount below the burn minimum',3:'fee above the cap',4:'attachment below the fee, refunded; the request stands',5:'bridge reverted'};
 type Update=(j:Journal,message?:string)=>void;
 export async function confirmStep(client:Reader,wallet:Wallet,journal:Journal,phase:Phase,update:Update) {
  const entry=journal.steps[phase];
@@ -134,16 +123,13 @@ export async function confirmStep(client:Reader,wallet:Wallet,journal:Journal,ph
     const decoded=decodeEventLog({abi:registryAbi,data:log.data,topics:log.topics});const args=decoded.args as unknown as Record<string,unknown>;
     if(decoded.eventName==='CardMinted')journal.outcomes.push(`Card minted: token ${String(args.tokenId)}. Open Explorer to read its live metadata.`);
     if(decoded.eventName==='TraitRequested')journal.outcomes.push(`Trait ${String(args.traitId)} requested. The oracle verdict is pending.`);
-    if(decoded.eventName==='BurnTriggered')journal.outcomes.push(`Burn bridge submitted: ${units(args.amount as bigint)} IMD; ${units(args.nativeFee as bigint)} ETH fee. Base delivery is not yet proved.`);
-    if(decoded.eventName==='BurnSkipped')journal.outcomes.push(`Burn skipped: ${BURN_REASONS[Number(args.reason)]??'unknown reason; inspect the receipt'}. The oracle request remains pending.`);
-    if(decoded.eventName==='Sponsored')journal.outcomes.push(`Pool donation confirmed: ${units(args.amount as bigint)} IMD.`);
    }catch{/* Unrelated or unsupported event. */}
   }
  }
  entry.state='confirmed';saveJournal(journal);update({...journal},phase==='registry'?'Registry transaction confirmed. Read the receipt outcomes below.':'Receipt confirmed. Continue to the next step.');
  return receipt;
 }
-export async function runStep(client:Reader,wallet:Wallet,journal:Journal,phase:Phase,update:Update,quote?:SwapQuote,reviewedBurnFee?:bigint) {
+export async function runStep(client:Reader,wallet:Wallet,journal:Journal,phase:Phase,update:Update,quote?:SwapQuote) {
  validateIntent(journal);
  await assertWallet(wallet);await integrity(client,true);
  if(journal.steps[phase]?.state==='confirmed')throw new Error('This step is already confirmed.');
@@ -168,13 +154,7 @@ export async function runStep(client:Reader,wallet:Wallet,journal:Journal,phase:
   tx={to:address('IMD'),data:encodeFunctionData({abi:erc20Abi,functionName:'approve',args:[address('Registry'),amount]})};
  } else {
   if(amount>0n && journal.steps.approve?.state!=='confirmed')throw new Error('Confirm the exact approval receipt first.');
-  let value=0n;
-  if(journal.sponsored){
-   const burn=await readBurn(client);
-   if(reviewedBurnFee===undefined || burn.attach!==reviewedBurnFee)throw new Error('Burn quote changed. Refresh the burn preview, review the exact fee, then retry.');
-   value=burn.attach;
-  }
-  tx={to:address('Registry'),data:journal.data,value};
+  tx={to:address('Registry'),data:journal.data,value:0n};
  }
  await assertWallet(wallet);
  // Simulate precisely what the wallet will be asked to sign before opening it.

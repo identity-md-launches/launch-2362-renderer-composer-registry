@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
+import {MockBurnExecutor} from "./mocks/MockBurnExecutor.sol";
 
 import {Base} from "./Base.t.sol";
 import {Registry} from "../src/Registry.sol";
@@ -151,7 +152,8 @@ contract AdversarialTest is Base {
         a.issuedAt = issuedAt;
         a.expiresAt = expiresAt;
         uint256 now_ = block.timestamp;
-        bool ok = now_ <= expiresAt && issuedAt <= now_ + 1 hours;
+        bool ok = now_ <= expiresAt && issuedAt <= now_ + 1 hours && issuedAt >= T0 && uint256(issuedAt) <= T0 + 1 days
+            && uint256(expiresAt) <= uint256(issuedAt) + 30 days;
         if (!ok) {
             vm.expectEmit(false, false, false, true);
             emit Registry.Missed(rid, 701, 7);
@@ -351,11 +353,10 @@ contract AdversarialTest is Base {
     // ------------------------------------------------------------------ 9: paying
 
     /// forge-config: default.fuzz.runs = 256
-    function test_fuzz_upgradeChargesExactlyKTimesPriceAndLeavesThePoolAlone(uint8 k, uint256 price) public {
+    function test_fuzz_upgradeChargesExactlyKTimesPriceAndLeavesNoBalance(uint8 k, uint256 price) public {
         k = uint8(bound(k, 1, 9));
         price = bound(price, 1, 100 ether);
         intake.setPrice(price);
-        imd.mint(address(registry), 3 ether); // the pool
         uint16[9] memory chain = [701, 801, 901, 1001, 1101, 1102, 1103, 1104, 1105];
         uint16[] memory ids = new uint16[](k);
         for (uint256 i; i < k; ++i) {
@@ -366,7 +367,7 @@ contract AdversarialTest is Base {
         registry.upgrade(ids, price);
         assertEq(imd.balanceOf(alice), 0);
         assertEq(imd.balanceOf(address(intake)), price * k);
-        assertEq(registry.pool(), 3 ether, "a claimant-paid request never touches the pool");
+        assertEq(imd.balanceOf(address(registry)), 0, "prices go to the Intake");
         for (uint256 i; i < k; ++i) {
             assertTrue(registry.pendingOf(alice, ids[i]) != 0);
         }
@@ -375,44 +376,6 @@ contract AdversarialTest is Base {
         vm.prank(bob);
         vm.expectRevert();
         registry.upgrade(ids, price);
-    }
-
-    function test_claimSponsoredWhilePendingOrVerifiedReverts() public {
-        imd.mint(address(registry), 5 ether);
-        curator.set(alice, 1, true, 1, 1, 1);
-        bytes32 rid = ask(alice, 701); // claimant-paid pending
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Registry.AlreadyPending.selector, alice, 701));
-        registry.claimSponsored(701, type(uint256).max);
-        assertFalse(registry.poolUsed(alice, 701), "the revert leaves poolUsed clear");
-        assertTrue(deliver(rid, attestationFor(rid, word(1))));
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Registry.AlreadyVerified.selector, alice, 701));
-        registry.claimSponsored(701, type(uint256).max);
-        assertEq(registry.pool(), 5 ether);
-    }
-
-    function test_abandonedPoolRequestReleasesTheReservationAndLateCallbackIsIgnored() public {
-        imd.mint(address(registry), 4 ether);
-        curator.set(alice, 1, true, 1, 1, 1);
-        vm.prank(alice);
-        registry.claimSponsored(701, type(uint256).max);
-        bytes32 rid = registry.pendingOf(alice, 701);
-        vm.warp(block.timestamp + 31 days);
-        vm.prank(bob);
-        vm.expectRevert(Registry.NotClaimant.selector);
-        registry.abandon(rid);
-        assertEq(registry.pendingOf(alice, 701), rid);
-        vm.prank(alice);
-        registry.abandon(rid);
-        assertEq(registry.pendingOf(alice, 701), bytes32(0));
-        assertFalse(registry.poolUsed(alice, 701), "the trait reservation is released");
-        assertEq(registry.lastPoolDay(alice), T0 / 1 days, "the day stays consumed");
-        assertEq(registry.pool(), 3.5 ether, "abandon returns nothing to the pool");
-        OracleAttestation memory a;
-        vm.expectEmit(false, false, false, true);
-        emit Registry.Missed(rid, 0, 1);
-        assertTrue(deliver(rid, a, ""));
     }
 
     // ------------------------------------------------------------------ shared facts, edges
@@ -424,11 +387,8 @@ contract AdversarialTest is Base {
         bytes32 rid = intake.lastId();
         vm.expectRevert(Registry.TooEarly.selector);
         registry.abandon(rid);
-        vm.warp(block.timestamp + 31 days);
-        vm.prank(alice); // a stranger may not: Bob paid for the shared fact
-        vm.expectRevert(Registry.NotClaimant.selector);
-        registry.abandon(rid);
-        vm.prank(bob);
+        vm.warp(block.timestamp + 31 days + 1);
+        vm.prank(alice);
         registry.abandon(rid);
         assertEq(registry.sharedPending(1201), bytes32(0));
         vm.prank(bob);
@@ -489,7 +449,6 @@ contract AdversarialTest is Base {
         s.sumArg = "value";
         s.threshold = 3;
         uint16 id = register(bob, s);
-        // upgrade refuses a T3 spec; the pool refuses every spec
         fund(alice, PRICE);
         uint16[] memory ids = new uint16[](1);
         ids[0] = id;
@@ -536,9 +495,19 @@ contract AdversarialTest is Base {
         } else {
             s.target = address(0xCAFE);
             // a kind-3 item names its grouping key as an address-typed indexed parameter (V2 item 18)
-            s.item = kind == 3
-                ? string.concat("event ", _repeat("a", 199), "(address indexed ", _repeat("b", 32), ")")
-                : string.concat(kind == 4 ? "function " : "event ", _repeat("a", kind == 4 ? 247 : 250));
+            s.item = kind == 4
+                ? string.concat("function ", _repeat("a", 32), "(address) view returns (uint256)")
+                : string.concat(
+                    "event ",
+                    _repeat("a", 32),
+                    "(address indexed ",
+                    _repeat("b", 32),
+                    ", uint256 indexed ",
+                    _repeat("c", 32),
+                    ", uint256 ",
+                    _repeat("d", 32),
+                    ")"
+                );
             s.fromBlock = 1;
             s.toBlock = type(uint64).max / 2;
             vm.roll(uint256(type(uint64).max / 2) + 64); // the finality margin
@@ -555,6 +524,11 @@ contract AdversarialTest is Base {
         (bytes memory body, bytes32 qh) = registry.composeBody(id, alice);
         assertTrue(qh != bytes32(0));
         assertLe(body.length, 16_384, "the Intake's MAX_BODY_BYTES");
+        assertLe(bytes(vm.parseJsonString(string(body), ".question")).length, 1000);
+        string[] memory keys = vm.parseJsonKeys(string(body), ".definitions");
+        for (uint256 i; i < keys.length; ++i) {
+            assertLe(bytes(vm.parseJsonString(string(body), string.concat(".definitions.", keys[i]))).length, 512);
+        }
         // and the registry can actually ask it
         if (kind != 3) {
             vm.roll(26_200_000);
@@ -714,13 +688,12 @@ contract AdversarialTest is Base {
         MockIntake evilIntake = new MockIntake(address(evil));
         Registry r = new Registry(
             CURATOR_ADDR,
-            address(idmd),
             address(evil),
             address(evilIntake),
             attester,
             address(renderer),
             address(composer),
-            address(0)
+            address(executor)
         );
         evil.mint(alice, 100 ether);
         vm.prank(alice);
@@ -730,25 +703,25 @@ contract AdversarialTest is Base {
         evil.mint(address(evil), 100 ether);
         vm.prank(address(evil));
         evil.approve(address(r), type(uint256).max);
-        bytes[5] memory payloads = _reentryPayloads(r);
+        bytes[4] memory payloads = _reentryPayloads(r);
         bytes memory guardError = abi.encodeWithSelector(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        for (uint256 i; i < 5; ++i) {
+        for (uint256 i; i < 4; ++i) {
             evil.arm(payloads[i]);
             vm.prank(alice);
-            r.sponsor(1 ether);
+            r.registerSpec(t1Spec(CURATOR_ADDR, "Reentry"), 0);
             assertTrue(evil.reentryReverted(), "the guard refused the re-entered call");
             assertEq(evil.reentryError(), guardError, "exactly ReentrancyGuardReentrantCall");
         }
-        assertEq(r.nextSpecId(), 10001);
+        assertEq(r.nextSpecId(), 10005);
         assertEq(r.pendingOf(address(evil), 701), bytes32(0));
         assertEq(r.sharedPending(1201), bytes32(0));
         assertEq(r.tokenOf(address(evil)), 0);
-        assertEq(evil.balanceOf(address(r)), 5 ether);
+        assertEq(evil.balanceOf(address(r)), 0);
 
         // Unguarded positive control: the same funded, approved attacker and the same payloads, fired
         // from a frame that holds no guard (the token's transferFrom called with the registry as
         // sender), succeed. The refusals above are the guard's, not a harness artefact.
-        for (uint256 i; i < 5; ++i) {
+        for (uint256 i; i < 4; ++i) {
             evil.arm(payloads[i]);
             vm.prank(address(r));
             evil.transferFrom(address(evil), address(r), 0);
@@ -756,19 +729,18 @@ contract AdversarialTest is Base {
             assertEq(evil.reentryError(), "");
         }
         assertEq(r.pendingOf(address(evil), 701) != bytes32(0), true);
-        assertEq(r.nextSpecId(), 10002);
+        assertEq(r.nextSpecId(), 10006);
         assertEq(r.sharedPending(1201) != bytes32(0), true);
         assertEq(r.tokenOf(address(evil)), 1);
     }
 
-    function _reentryPayloads(Registry r) internal pure returns (bytes[5] memory payloads) {
+    function _reentryPayloads(Registry r) internal pure returns (bytes[4] memory payloads) {
         uint16[] memory ids = new uint16[](1);
         ids[0] = 701;
         payloads[0] = abi.encodeCall(r.upgrade, (ids, PRICE));
-        payloads[1] = abi.encodeCall(r.sponsor, (1 ether));
-        payloads[2] = abi.encodeCall(r.registerSpec, (t1Spec(address(0xCAFE), "Evil"), 0));
-        payloads[3] = abi.encodeCall(r.requestSharedFact, (1201, PRICE));
-        payloads[4] = abi.encodeCall(r.mintCard, ());
+        payloads[1] = abi.encodeCall(r.registerSpec, (t1Spec(address(0xCAFE), "Evil"), 0));
+        payloads[2] = abi.encodeCall(r.requestSharedFact, (1201, PRICE));
+        payloads[3] = abi.encodeCall(r.mintCard, ());
     }
 
     function test_onFailureRecordsWhatItIsToldAndStoresNothing() public {
@@ -779,7 +751,7 @@ contract AdversarialTest is Base {
         registry.onFailure(rid, 1, "body_invalid", 65535, 65535, hex"deadbeef");
         assertEq(registry.pendingOf(alice, 701), bytes32(0));
         assertFalse(registry.hasTrait(alice, 701));
-        assertEq(registry.pool(), 0);
+        assertEq(imd.balanceOf(address(registry)), 0);
         // the Intake refuses a failure envelope that names another request or status
         bytes32 rid2 = ask(alice, 801);
         vm.expectRevert();

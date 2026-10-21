@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
+import {MockBurnExecutor} from "./mocks/MockBurnExecutor.sol";
 
 import {Base} from "./Base.t.sol";
 import {Registry} from "../src/Registry.sol";
@@ -17,32 +18,6 @@ contract V2Test is Base {
         curator.set(alice, 1, true, 1, 1, 1);
     }
 
-    // item 1: every pool draw is capped by maxPrice, an eighth of the pool and POOL_DRAW_CAP
-    function test_item1_poolDrawCaps() public {
-        imd.mint(address(registry), 10 ether);
-        intake.setPrice(10 ether);
-        vm.prank(alice);
-        vm.expectRevert(Registry.PoolDrawTooLarge.selector);
-        registry.claimSponsored(701, 10 ether);
-        intake.setPrice(1 ether);
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Registry.PriceAboveMax.selector, 1 ether, 0.5 ether));
-        registry.claimSponsored(701, 0.5 ether);
-        vm.prank(alice);
-        registry.claimSponsored(701, 1 ether);
-        assertTrue(registry.pendingOf(alice, 701) != 0);
-        assertEq(registry.pool(), 9 ether);
-        // above the absolute cap even with a deep pool
-        imd.mint(address(registry), 100 ether);
-        intake.setPrice(2 ether + 1);
-        vm.warp(T0 + 1 days);
-        vm.prank(alice);
-        vm.expectRevert(Registry.PoolDrawTooLarge.selector);
-        registry.claimSponsored(801, type(uint256).max);
-        assertEq(registry.POOL_DRAW_CAP(), 2 ether);
-    }
-
-    // item 2: a zero price reverts on the paid and the pool path
     function test_item2_zeroPriceReverts() public {
         imd.mint(address(registry), 10 ether);
         intake.setPrice(0);
@@ -52,56 +27,10 @@ contract V2Test is Base {
         vm.prank(alice);
         vm.expectRevert(Registry.ZeroPrice.selector);
         registry.upgrade(ids, PRICE);
-        vm.prank(alice);
-        vm.expectRevert(Registry.ZeroPrice.selector);
-        registry.claimSponsored(701, PRICE);
-    }
-
-    // items 3 and 4: a failed sponsored draw gives the trait back, the day stays consumed; nine verified for ever
-    function test_item3_failureRestoresTheTraitReservationAndTenAttemptsPay() public {
-        imd.mint(address(registry), 100 ether);
-        for (uint256 i; i < 10; ++i) {
-            vm.warp(T0 + i * 1 days);
-            vm.prank(alice);
-            registry.claimSponsored(701, PRICE);
-            bytes32 rid = registry.pendingOf(alice, 701);
-            assertTrue(registry.poolUsed(alice, 701));
-            if (i % 2 == 0) assertTrue(fail(rid, 2, "disagreed"));
-            else assertTrue(deliver(rid, attestationFor(rid, word(0)))); // Missed, reason 8
-            assertFalse(registry.poolUsed(alice, 701), "the reservation is released");
-            assertEq(registry.pendingOf(alice, 701), bytes32(0));
-            vm.prank(alice);
-            vm.expectRevert(abi.encodeWithSelector(Registry.PoolDailyLimit.selector, alice));
-            registry.claimSponsored(701, PRICE);
-        }
-        assertEq(registry.pool(), 100 ether - 10 * PRICE, "the pool paid ten prices");
-        // after a miss a paid upgrade of the same trait succeeds at once
-        bytes32 paid = ask(alice, 701);
-        assertTrue(deliver(paid, attestationFor(paid, word(1))));
-        assertTrue(registry.hasTrait(alice, 701));
-        assertEq(registry.sponsoredVerified(alice), 0, "a paid verification is not a sponsored one");
-    }
-
-    function test_item4_nineVerifiedSponsoredTraitsPerWallet() public {
-        imd.mint(address(registry), 100 ether);
-        uint16[9] memory chain = [701, 801, 901, 1001, 1101, 1102, 1103, 1104, 1105];
-        for (uint256 i; i < 9; ++i) {
-            vm.warp(T0 + i * 1 days);
-            vm.prank(alice);
-            registry.claimSponsored(chain[i], PRICE);
-            bytes32 rid = registry.pendingOf(alice, chain[i]);
-            assertTrue(deliver(rid, attestationFor(rid, word(1))));
-            assertTrue(registry.poolUsed(alice, chain[i]), "a verified draw keeps its reservation");
-        }
-        assertEq(registry.sponsoredVerified(alice), 9);
-        vm.warp(T0 + 10 days);
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Registry.PoolAlreadyUsed.selector, alice, 701));
-        registry.claimSponsored(701, PRICE);
     }
 
     // item 5: abandon after 31 days, by the payer for a shared fact
-    function test_item5_abandonSharedFactOnlyByPayerAfter31Days() public {
+    function test_item5_abandonSharedFactByAnyoneAfter31Days() public {
         fund(bob, PRICE);
         vm.prank(bob);
         registry.requestSharedFact(1201, PRICE);
@@ -113,9 +42,6 @@ contract V2Test is Base {
         registry.abandon(shared);
         vm.warp(T0 + 32 days);
         vm.prank(alice);
-        vm.expectRevert(Registry.NotClaimant.selector);
-        registry.abandon(shared);
-        vm.prank(bob);
         registry.abandon(shared);
         assertEq(registry.sharedPending(1201), bytes32(0));
         vm.prank(alice);
@@ -142,10 +68,11 @@ contract V2Test is Base {
         idmd.setBalance(alice, 1);
         uint256 id = mint(alice);
         assertEq(registry.totalSupply(), 1);
-        assertTrue(registry.hasTrait(alice, 601) && registry.hasTrait(alice, 202));
+        assertFalse(registry.hasTrait(alice, 601));
+        assertTrue(registry.hasTrait(alice, 202));
         curator.set(alice, 5, true, 0, 0, 0);
         idmd.setBalance(alice, 0);
-        assertTrue(registry.hasTrait(alice, 601), "Armed stays lit");
+        assertFalse(registry.hasTrait(alice, 601), "operator evidence requires an attestation");
         assertTrue(registry.hasTrait(alice, 202), "frozen");
         string memory before = registry.tokenURI(id);
         vm.prank(alice);
@@ -164,8 +91,8 @@ contract V2Test is Base {
         assertTrue(registry.hasTrait(bob, 801));
         uint256 bid = mint(bob);
         assertEq(registry.totalSupply(), 2);
-        assertTrue(registry.hasTrait(bob, 601), "snapshot at the buyer's own mint");
-        assertEq(registry.frozenDirect(id) & (1 << 20), 1 << 20);
+        assertFalse(registry.hasTrait(bob, 601), "mint never grants an operator fact");
+        assertEq(registry.frozenDirect(id) & (1 << 20), 0);
         assertTrue(bid != id);
     }
 
@@ -206,25 +133,17 @@ contract V2Test is Base {
         vm.expectRevert("IMD decimals");
         new Registry(
             CURATOR_ADDR,
-            address(idmd),
             address(imd),
             address(intake),
             attester,
             address(renderer),
             address(composer),
-            address(0)
+            address(executor)
         );
         vm.clearMockedCalls();
         vm.expectRevert(Registry.DependencyHasNoCode.selector);
         new Registry(
-            CURATOR_ADDR,
-            address(idmd),
-            address(imd),
-            address(intake),
-            attester,
-            address(0xBEEF),
-            address(composer),
-            address(0)
+            CURATOR_ADDR, address(imd), address(intake), attester, address(0xBEEF), address(composer), address(executor)
         );
     }
 }

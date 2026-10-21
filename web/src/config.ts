@@ -42,10 +42,7 @@ export const erc20Abi = parseAbi([
   'function approve(address,uint256) returns (bool)',
   'event Transfer(address indexed from,address indexed to,uint256 value)',
 ]);
-export const burnAbi = parseAbi([
-  'function previewBridge() view returns (uint256 amountToSend,uint256 minAmountToReceive,uint256 nativeFee)',
-  'function tokenBalance() view returns (uint256)',
-]);
+
 export const SYNTHETIC = '0x000000000000000000000000000000000000c1a1' as Address;
 export const CONTRIBUTORS = [
   {name:'First contributor',address:'0x200e710acaa6a93bbc77146026328c40f1d60fb1'},

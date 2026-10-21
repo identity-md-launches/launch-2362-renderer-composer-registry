@@ -27,70 +27,7 @@ contract V2EdgesTest is Base {
         ids[0] = id;
     }
 
-    // ------------------------------------------------------------------ item 1: pool draw caps
-
-    function test_item1_drawAtExactlyAnEighthOfThePoolPasses() public {
-        imd.mint(address(registry), 8 ether);
-        intake.setPrice(1 ether);
-        vm.prank(alice);
-        registry.claimSponsored(701, 1 ether);
-        assertEq(registry.pool(), 7 ether);
-    }
-
-    function test_item1_drawOneWeiAboveAnEighthReverts() public {
-        imd.mint(address(registry), 8 ether - 1);
-        intake.setPrice(1 ether);
-        vm.prank(alice);
-        vm.expectRevert(Registry.PoolDrawTooLarge.selector);
-        registry.claimSponsored(701, 1 ether);
-        assertEq(registry.pendingOf(alice, 701), bytes32(0));
-        assertFalse(registry.poolUsed(alice, 701));
-        assertEq(registry.lastPoolDay(alice), 0, "a refused draw consumes no day");
-    }
-
-    function test_item1_drawAtExactlyTheAbsoluteCapPasses() public {
-        imd.mint(address(registry), 16 ether);
-        intake.setPrice(2 ether);
-        vm.prank(alice);
-        registry.claimSponsored(701, 2 ether);
-        assertEq(registry.pool(), 14 ether);
-    }
-
-    function test_item1_emptyPoolRefusesEveryDraw() public {
-        vm.prank(alice);
-        vm.expectRevert(Registry.PoolDrawTooLarge.selector);
-        registry.claimSponsored(701, PRICE);
-    }
-
-    function test_item1_nonMemberAndNonChainTraitRefused() public {
-        imd.mint(address(registry), 100 ether);
-        vm.prank(carol);
-        vm.expectRevert(abi.encodeWithSelector(Registry.NotMember.selector, carol));
-        registry.claimSponsored(701, PRICE);
-        uint16[4] memory bad = [uint16(101), 1201, 1301, 10001];
-        for (uint256 i; i < bad.length; ++i) {
-            vm.prank(alice);
-            vm.expectRevert(abi.encodeWithSelector(Registry.NotACatalogChainTrait.selector, bad[i]));
-            registry.claimSponsored(bad[i], PRICE);
-        }
-    }
-
     /// forge-config: default.fuzz.runs = 512
-    function testFuzz_item1_drawSucceedsExactlyWithinTheThreeCaps(uint256 poolSize, uint256 price, uint256 maxPrice)
-        public
-    {
-        poolSize = bound(poolSize, 0, 1000 ether);
-        price = bound(price, 1, 5 ether);
-        maxPrice = bound(maxPrice, 0, 6 ether);
-        imd.mint(address(registry), poolSize);
-        intake.setPrice(price);
-        bool ok = price <= maxPrice && price <= poolSize / 8 && price <= 2 ether;
-        vm.prank(alice);
-        if (!ok) vm.expectRevert();
-        registry.claimSponsored(701, maxPrice);
-        assertEq(registry.pool(), ok ? poolSize - price : poolSize);
-        assertEq(registry.poolUsed(alice, 701), ok);
-    }
 
     // ------------------------------------------------------------------ item 2: zero price
 
@@ -117,67 +54,6 @@ contract V2EdgesTest is Base {
     }
 
     // ------------------------------------------------------------------ items 3 and 7: release and one completion
-
-    function test_item3_missedDrawRetriesNextDayNotTheSameDay() public {
-        imd.mint(address(registry), 100 ether);
-        vm.prank(alice);
-        registry.claimSponsored(801, PRICE);
-        bytes32 rid = registry.pendingOf(alice, 801);
-        OracleAttestation memory a = attestationFor(rid, word(1));
-        OracleAttestation memory again = attestationFor(rid, word(1));
-        bytes memory againSig = sign(again);
-        a.expiresAt = uint64(block.timestamp - 1); // reason 7
-        vm.expectEmit(false, false, false, true, address(registry));
-        emit Registry.Missed(rid, 801, 7);
-        assertTrue(deliver(rid, a));
-        assertFalse(registry.poolUsed(alice, 801));
-        assertEq(registry.pendingOf(alice, 801), bytes32(0));
-        // the Intake completes a request once
-        vm.expectRevert("AlreadyCompleted");
-        deliver(rid, again, againSig);
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Registry.PoolDailyLimit.selector, alice));
-        registry.claimSponsored(801, PRICE);
-        // the next UTC calendar day, not 24 hours later
-        vm.warp((T0 / 1 days + 1) * 1 days);
-        vm.prank(alice);
-        registry.claimSponsored(801, PRICE);
-        assertTrue(registry.poolUsed(alice, 801));
-    }
-
-    function test_item3_abandonedDrawReleasesTheTraitButNotTheDay() public {
-        imd.mint(address(registry), 100 ether);
-        vm.prank(alice);
-        registry.claimSponsored(901, PRICE);
-        bytes32 rid = registry.pendingOf(alice, 901);
-        vm.warp(T0 + 31 days);
-        vm.prank(alice);
-        registry.abandon(rid);
-        assertFalse(registry.poolUsed(alice, 901));
-        assertEq(registry.sponsoredVerified(alice), 0);
-        vm.prank(alice);
-        registry.claimSponsored(901, PRICE);
-        // a late, still valid answer for the abandoned id changes nothing for the successor
-        bytes32 next = registry.pendingOf(alice, 901);
-        assertTrue(next != rid);
-        assertTrue(registry.poolUsed(alice, 901));
-    }
-
-    function test_item3_failedDrawForAnotherTraitKeepsTheVerifiedOnesReservation() public {
-        imd.mint(address(registry), 100 ether);
-        vm.prank(alice);
-        registry.claimSponsored(701, PRICE);
-        bytes32 r1 = registry.pendingOf(alice, 701);
-        assertTrue(deliver(r1, attestationFor(r1, word(1))));
-        vm.warp(T0 + 1 days);
-        vm.prank(alice);
-        registry.claimSponsored(801, PRICE);
-        bytes32 r2 = registry.pendingOf(alice, 801);
-        assertTrue(fail(r2, 1, "body_refused"));
-        assertTrue(registry.poolUsed(alice, 701));
-        assertFalse(registry.poolUsed(alice, 801));
-        assertEq(registry.sponsoredVerified(alice), 1);
-    }
 
     function test_item7_callbacksRefuseEveryCallerButTheIntake() public {
         bytes32 rid = ask(alice, 701);
@@ -237,7 +113,7 @@ contract V2EdgesTest is Base {
         vm.prank(alice);
         vm.expectRevert(Registry.TooEarly.selector);
         registry.abandon(rid);
-        vm.warp(T0 + 31 days);
+        vm.warp(T0 + 31 days + 1);
         vm.prank(bob);
         vm.expectRevert(Registry.NotClaimant.selector);
         registry.abandon(rid);
@@ -258,19 +134,13 @@ contract V2EdgesTest is Base {
         assertFalse(registry.hasTrait(alice, 701));
     }
 
-    function test_item5_sharedFactPayerIsTheCallerNotTheFunder() public {
+    function test_item5_sharedFactCanBeClearedByAnyone() public {
         fund(bob, PRICE);
         vm.prank(bob);
         registry.requestSharedFact(1201, PRICE);
         bytes32 rid = intake.lastId();
-        vm.warp(T0 + 31 days);
+        vm.warp(T0 + 31 days + 1);
         vm.prank(alice);
-        vm.expectRevert(Registry.NotClaimant.selector);
-        registry.abandon(rid);
-        vm.prank(address(0));
-        vm.expectRevert(Registry.NotClaimant.selector);
-        registry.abandon(rid);
-        vm.prank(bob);
         registry.abandon(rid);
         fund(alice, PRICE);
         vm.prank(alice);
@@ -368,10 +238,7 @@ contract V2EdgesTest is Base {
         vm.prank(alice);
         registry.transferFrom(alice, bob, id);
         assertEq(registry.tokenOf(bob), 0);
-        // sponsored claim, paid upgrade and a shared-fact application all act on bob's own wallet
-        vm.prank(bob);
-        registry.claimSponsored(701, PRICE);
-        bytes32 rs = registry.pendingOf(bob, 701);
+        bytes32 rs = ask(bob, 701);
         assertTrue(deliver(rs, attestationFor(rs, word(1))));
         bytes32 rp = ask(bob, 801);
         assertTrue(deliver(rp, attestationFor(rp, word(1))));
@@ -428,13 +295,13 @@ contract V2EdgesTest is Base {
         assertTrue(registry.hasTrait(alice, 1201));
     }
 
-    function test_item14_armedOffAtMintStaysOffAfterReceivingASeat() public {
+    function test_item14_operatorOffAtMintStaysOffAfterReceivingASeat() public {
         uint256 id = mint(alice);
         assertFalse(registry.hasTrait(alice, 601));
         idmd.setBalance(alice, 3);
         assertFalse(registry.hasTrait(alice, 601), "snapshot");
         assertEq(registry.frozenDirect(id) & (1 << 20), 0);
-        // a wallet without a card never reads Armed live
+        // a wallet without a card never reads Swarmed live
         idmd.setBalance(carol, 1);
         assertFalse(registry.hasTrait(carol, 601));
         assertFalse(registry.hasDirectTrait(carol, 601));
@@ -444,16 +311,16 @@ contract V2EdgesTest is Base {
         curator.set(carol, 0, true, 10, 800 ether, 10_000);
         idmd.setBalance(carol, 1);
         uint256 id = mint(carol);
-        uint16[14] memory direct = [101, 201, 202, 301, 302, 303, 401, 402, 403, 404, 501, 502, 503, 601];
-        for (uint256 i; i < 14; ++i) {
+        uint16[13] memory direct = [101, 201, 202, 301, 302, 303, 401, 402, 403, 404, 501, 502, 503];
+        for (uint256 i; i < 13; ++i) {
             assertTrue(registry.hasDirectTrait(carol, direct[i]));
         }
-        // 14 bits exactly, at (family - 1) * 4 + tier - 1
+        // 13 bits exactly; bit 20 is permanently unused, at (family - 1) * 4 + tier - 1
         uint32 bits = registry.frozenDirect(id);
-        assertEq(bits, uint32((1 << 0) | (3 << 4) | (7 << 8) | (15 << 12) | (7 << 16) | (1 << 20)));
+        assertEq(bits, uint32((1 << 0) | (3 << 4) | (7 << 8) | (15 << 12) | (7 << 16)));
         curator.set(carol, 9, false, 0, 0, 0);
         idmd.setBalance(carol, 0);
-        for (uint256 i; i < 14; ++i) {
+        for (uint256 i; i < 13; ++i) {
             assertTrue(registry.hasTrait(carol, direct[i]), "frozen");
         }
         assertFalse(registry.hasDirectTrait(carol, 701), "not a direct id");

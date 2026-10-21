@@ -1,13 +1,8 @@
-# CATALOG.md: the v1 trait catalog, frozen 2026-10-11
+# CATALOG.md: Sworn wallet facts
 
 This file binds the code. Ids, rules, windows and acceptance rules do not change; the display names in section 7
 were filled in by the owner on 2026-10-16 (product **Sworn**, symbol **SWORN**). Read `README.md` first, `TEMPLATES.md` for the question bodies and `INTEGRATION.md`
 for the Intake and the attestation.
-
-**Round 2 (2026-10-12), before any code exists:** the two Early bird predicates swapped ids so the family is monotone
-(201 = hour <= 1, 202 = hour 0); the Operator trait is declared live; the pool rules of section 6 replaced
-`payForward(wallet, traitId)` with `claimSponsored(traitId)` and exclude community specs; the callback acceptance of
-section 4 binds through the plane's `questionHash`; T5 asks for the account nonce only. Everything else is as frozen.
 
 **Words.** *The registry* is the ERC-721 contract, *the card* is a wallet's token, a *trait* is one per-wallet fact
 (`traitId`, `hasTrait`). *Claimant* is the wallet that minted the card and that every trait is about; *holder* is
@@ -63,10 +58,10 @@ windows unchanged in the free quotes of 2026-10-12 (`reference/plane/quotes/`).
 - **Tiers are monotone.** `hasTrait(A, id)` is true for every tier at or below the wallet's level (a wallet with ten
   deposits has 301, 302 and 303; an hour-0 wallet has 201 and 202). The card shows only the highest tier per family.
   Allowlists may gate on any tier.
-- Direct-read families (1 to 6) are evaluated live in `tokenURI` and `hasTrait`; they are fixed at launch.
-- Oracle families (7 to 13) are stored per `(claimant, traitId)` after a verified attestation.
+- Direct-read families (1 to 5) read the settled Curator for wallets without a card and are frozen at mint for card claimants.
+- Oracle families (6 to 13) are stored per `(claimant, traitId)` after a verified attestation.
 
-## 3. Trait table v1 (25 slots, working names)
+## 3. Trait table (25 slots)
 
 | id | working name | class | source and rule (A = claimant) | window | eligible |
 |---|---|---|---|---|---|
@@ -76,7 +71,7 @@ windows unchanged in the free quotes of 2026-10-12 (`reference/plane/quotes/`).
 | 301 / 302 / 303 | Climber >= 3 / 5 / 10 | direct | `txCountOf(A) >= 3 / 5 / 10` | live | from the view; at most 2,037 wallets made more than one deposit |
 | 401 / 402 / 403 / 404 | Capital >= 1 / 10 / 100 / 800 ETH | direct | `contributedBy(A) >= 1e18 / 1e19 / 1e20 / 8e20` (the view returns `contributors(A).highWater`, the largest single send in wei) | live | snapshot of 15,576 wallets: median 0.45 ETH, p90 14, p99 98.8, max 1,000 (the cap) |
 | 501 / 502 / 503 | Scoreboard >= 1,000 / 3,162 / 10,000 | direct | `pointsOf(A) >= 1000 / 3162 / 10000` (points = 1000 x sqrt(weight in ETH)) | live | from the view |
-| 601 | Operator | direct, **live** | IDMD `balanceOf(A) >= 1` (`0x0000eC93127BAA929E58E97dd0095A2BFb38ec1D`); true while A holds an IDMD, false after it moves; independent of THE LIST membership | live | at most 2,000 |
+| 601 | Swarmed | panel, T6 bool | operated an IdentityMD seat through at least 3 accepted Identity.md swarm jobs while holding it | living: 25,090,085 to the request block minus 64 | about 850 qualifying agents (847 measured on 2026-10-21) |
 | 701 | Still here | chain, T1 log-count >= 1 | `Deposited` with `contributor` = A | `W_JUDGED` | 3,936 |
 | 801 | Last stand | chain, T1 log-count >= 1 | `Deposited` with `contributor` = A and `hour` = 64 | `W_LIFE` | 7 |
 | 901 | The last one in | chain, T1 log-count >= 1 | `Deposited` with `contributor` = A and `hour` = 65 | `W_LIFE` | 1 |
@@ -108,14 +103,14 @@ like an hour-0 founder. Capital reads `contributedBy(A)`, never the struct.
 
 ## 4. What the callback accepts, per class
 
-The registry stores `pending[requestId] = (claimant, traitId, requestedAt, questionHash)` when it sends a question
+The registry stores `pending[requestId] = (claimant, traitId, requestedAt, questionHash, fromBlock, toBlock)` when it sends a question
 and, in `onResult(requestId, attestation, signature)`, verifies in this order: `msg.sender` is the Intake and
 `requestId` is pending; signature length == 65 (reason 2); answer length <= 2112 and exactly 32 for bool/uint256
 kinds (reason 9), before any dynamic copy or hash; `chainId` == 1; signer == attester
 (`0x5598aa9146215bc13eb26f2c692ad1461fd32982`, constructor argument) under the domain with
 `verifyingContract` == the registry and domain `chainId` == the deployment chain; `answerType` (uint8) == the template's code;
 `agreed >= quorum >= the template's quorum` and `panelSize >= the template's`; window == the pending request's window;
-expiry; **`questionHash` == the hash the registry computed when it composed the body**; and the answer against the
+bounded dates (issued between request time and request time plus one day, validity at most 30 days); **`questionHash` == the hash the registry computed when it composed the body**; and the answer against the
 rule below (decoded defensively: `INTEGRATION.md` section 4). The attestation's `requestId` is the plane's own id and
 is stored, not compared. A miss is recorded (`Missed(requestId, traitId, reason)` with the reason codes of
 `INTEGRATION.md` section 4), clears the pending pair and never reverts; a refusal or a panel without a verdict arrives
@@ -125,36 +120,36 @@ through `onFailure` and is recorded as `NoVerdict`.
 |---|---|---|
 | T1 log-count | `uint256` (code 3) | `value >= threshold` (1 for every v1 trait) |
 | T2 log-sum | `uint256` (code 3) | `value >= threshold` |
-| T3 log-rank (shared fact) | `address[]` (code 4) | the callback checks the canonical `abi.encode(address[])` envelope (offset `0x20`, length `n` with `1 <= n <= 64`, clean address words) and stores only `(requestId, keccak256(a.answer), n)` under the fact id (the list does not fit the 200,000-gas stipend); a bad envelope is a miss and stores nothing. `applySharedFact(factId, address[] list)` recomputes `keccak256(abi.encode(list))`, compares, and marks `msg.sender` if `list[0..min(head, n))` contains it |
+| T3 log-rank (shared fact) | `address[]` (code 4) | canonical `abi.encode(address[])`, exactly `head` entries (1 to 32), clean address words; store its hash and count. `applySharedFact` checks the exact hash and membership. A truncated list is a miss. |
 | T4 call-compare | `bool` (code 0) | `value == true` |
 | T5 panel nonce | `bool` (code 0) | `value == true` |
+| T6 operator (catalog 601 only) | `bool` (code 0) | `value == true`; accepted window stored permanently |
 
-Oracle defaults: chain evidence `panelSize` 5, `quorum` 3 (the deployer reruns the recipe before signing, so the
-panel only has to agree on a recipe); panel evidence `panelSize` 11, `quorum` 7 (as in both pilots);
-`validForSeconds` 2,592,000 (30 days); `chainId` 1; blocks in hex in every text; `head` 32 for T3. A `disagreed`,
+Oracle defaults: kinds 1, 2 and 4 use `panelSize` 5, `quorum` 3 (the deployer reruns the recipe before signing, so the
+panel only has to agree on a recipe); kinds 3, 5 and 6 use `panelSize` 11, `quorum` 7 (as in both pilots);
+`validForSeconds` 2,592,000 (30 days); `chainId` 1; T1–T5 use hex block tags where their recipe requires them; T6 uses decimal block numbers; `head` 32 for T3. A `disagreed`,
 `not_answerable` or refused request reaches `onFailure` (Intake v2) and is "no verdict", never false; a request the
 plane never completes is released by `abandon(requestId)` after 31 days (`block.timestamp`, from the request's
-stored `requestedAt`): a personal request, paid or sponsored, by its claimant only (`NotClaimant()` for a stranger);
-a shared fact by anyone. The price paid is spent either way, and sponsored allowances stay consumed.
+stored `requestedAt`): strictly later than `requestedAt + 31 days`, a personal request by its claimant only and a shared fact by anyone. The price paid is spent either way. At equality, a last-second valid delivery remains possible and abandonment is too early. The callback clears pending state before checking the answer; misses release the pair for a paid retry.
 
 ## Templates
 
-The five question templates, their placeholders and the checked example bodies are in `TEMPLATES.md`; every oracle
-trait in section 3 names its template there (T1, T3, T5).
+The six question templates, their placeholders and the checked example bodies are in `TEMPLATES.md`; every oracle
+trait in section 3 names its template there (T1, T3, T5, T6).
 
 ## 5. Spec registration (community traits)
 
-`registerSpec(Spec)` by anyone, 6.4 IMD into the registry, returns the new id (10001 upward), emits
-`SpecRegistered(id, registrant)`. The spec is immutable. Fields:
+`registerSpec(Spec, expectedId)` by anyone, 6.4 IMD, returns the new id (10001 upward), emits
+`SpecRegistered(id, registrant)`. The spec is immutable. Use expectedId = 0 for no ordering assertion, or the observed next id to reject a race. Fees are forwarded to the BurnExecutor V2 for bridging and burning on Base. Fields:
 
 | field | type | guard |
 |---|---|---|
 | `kind` | uint8: 1 T1, 2 T2, 3 T3, 4 T4, 5 T5 | one of the five |
 | `target` | address | nonzero for T1 to T4; must be zero for T5 (`validateSpec` reverts `BadSpec("target")` otherwise, as the struct comment says) |
-| `item` | string | the event item (T1 to T3) or function item (T4); charset `[A-Za-z0-9_ ,()[]]`, at most 256 bytes, must start with `event ` or `function ` as the kind requires. v1 accepts a trailing `anonymous`; **v2 rejects it for kind 3** (`BadSpec("item")`, `docs/V2.md` item 18: an anonymous event has no signature topic, so the grouping topic would be wrong) |
-| `arg` | string | indexed argument that equals the claimant (T1, T2) or the groupBy key (T3); ASCII `[A-Za-z0-9_]`, at most 32 |
-| `fixedArg`, `fixedVal` | string, uint256 | optional second indexed filter (T1, T2); empty string = none and requires `fixedVal == 0` (`BadSpec` otherwise) |
-| `sumArg` | string | T2 and T3 only |
+| `item` | string | at most 256 bytes; closed event/function grammar below |
+| `arg` | string | must name an actual indexed address field of `item` (T1, T2 claimant; T3 grouping); identifier at most 32 bytes |
+| `fixedArg`, `fixedVal` | string, uint256 | optional second filter that must name an actual indexed field of `item` (T1, T2); empty string = none and requires `fixedVal == 0` (`BadSpec` otherwise) |
+| `sumArg` | string | T2 and T3 only; must name a real field of `item` |
 | `op` | uint8 | T4 only: 1 `>=`, 2 `>`, 3 `<=`, 4 `<`, 5 `==` |
 | `threshold` | uint256 | T1, T2, T4, T5: `>= 1`; T3: head, 1 to 32 |
 | `fromBlock`, `toBlock` | uint64 | `fromBlock <= toBlock`, `toBlock - fromBlock + 1 >= 7200` and `toBlock <= H - 64` at registration (T5: `fromBlock == toBlock`, and `toBlock + 7200 <= H`); mainnet height `H` is `block.number` on chain 1, otherwise `Composer.mainnetHeightBound()` (the timestamp-derived upper bound and its caveat are documented in README and INTEGRATION) |
@@ -167,7 +162,7 @@ The Solidity shape (field order is the ABI; there is no `evidence` field, it is 
 struct Spec {
     uint8   kind;        // 1 T1 log-count, 2 T2 log-sum, 3 T3 log-rank (shared), 4 T4 call-compare, 5 T5 panel nonce
     address target;      // T1 to T4; zero for T5
-    string  item;        // event or function item; charset [A-Za-z0-9_ ,()\[\]], <= 256 bytes, prefix "event " or "function "
+    string  item;        // event or function item; closed grammar below; <= 256 bytes
     string  arg;         // [A-Za-z0-9_], 1..32 bytes; T1/T2 the claimant argument, T3 the groupBy key; empty for T4/T5
     string  fixedArg;    // [A-Za-z0-9_], 0..32 bytes; empty = no second filter (T1/T2 only)
     uint256 fixedVal;
@@ -183,13 +178,17 @@ struct Spec {
 The class of a spec follows its kind: kinds 1, 2 and 4 are chain, kind 3 is shared, kind 5 is panel (the former
 `traitClass` view was removed for the launch size budget; `specOf(id).kind` says it).
 `upgrade` rejects T3 spec ids (shared facts go through `requestSharedFact`/`applySharedFact`, which accept any T3 id).
-**The pool never funds a community spec of any kind**: `claimSponsored` accepts the catalog's
-nine chain traits only (section 6). The renderer escapes every spec string (`item`, `arg`, `fixedArg`, `sumArg`,
-`name`) in JSON and SVG, and the body composer rejects any byte outside the charsets above.
+The Renderer escapes display names. The Composer accepts no prose outside the following signature grammar:
+
+- Event: `event Name(type name, type indexed name, …)` with exactly single spaces and comma-space separators, nothing before `event ` or after `)`. No `anonymous`.
+- Function: exactly `function name(address) view returns (uint256)`.
+- Names are `[A-Za-z_][A-Za-z0-9_]*`, at most 32 bytes.
+- Types: `address`, `bool`, `string`, `bytes`, `bytes1` through `bytes32`, `uint8` through `uint256` and `int8` through `int256` in steps of eight, each optionally followed by `[]`. No tuples, arbitrary type names or fixed arrays.
+
+On chain 1 `validateSpec` ignores its `blockNumber` argument and reads `block.number`. Off mainnet the timestamp-derived `mainnetHeightBound()` applies; it can exceed the actual mainnet head after skipped slots, so clients must check mainnet before spending. Frozen catalog anchors are exempt from the 7,200-block community minimum. Kind 6 cannot be registered by the community.
 
 The composed body is a deterministic function of the spec and the claimant (golden tests per kind, fixtures in
-`templates/fixtures/`); the registry asserts every `definitions` entry is at most 512 characters and the question at
-most 1,000 before sending. A spec whose body is refused by the plane keeps its fee, and its registrant or claimants pay
+`templates/fixtures/`); the validated spec grammar and fixed templates bound every `definitions` entry to at most 512 characters and the question to at most 1,000; maximal-spec tests verify these limits. A spec whose body is refused by the plane keeps its fee, and its registrant or claimants pay
 every request about it: junk specs burden only whoever pays for junk. Sequential ids are a public ordering, not a
 reservation: a client reads the id from `SpecRegistered` or the return value, never predicts it.
 
@@ -197,35 +196,12 @@ reservation: a client reads the id from `SpecRegistered` or the return value, ne
 registered; once the counter is exhausted `registerSpec` reverts for ever. Catalog ids and existing specs are
 unaffected.
 
-## 6. Sharing, pool, fees
+## 6. Sharing and fees
 
-`mintCard()` 0.1 IMD into the registry, once per wallet; `upgrade(traitIds[], maxPrice)` k x `priceOf` (reverts if
-`priceOf > maxPrice`); `requestSharedFact(factId, maxPrice)` one `priceOf` by anyone, at most one pending per fact id,
-refused once stored; `applySharedFact(factId, list)` gas only; `sponsor(amount)` any amount; `abandon(requestId)`
-after 31 days (a personal pair by its claimant, a shared fact by its payer). The pool is the registry's IMD balance
-(`pool()`), spent only through:
+`mintCard()` costs 0.1 IMD, once per wallet. `registerSpec` costs 6.4 IMD. Fees are forwarded to the BurnExecutor V2 for bridging and burning on Base.
+`upgrade(traitIds, maxPrice)` pays the Intake once per requested personal fact. `requestSharedFact(factId, maxPrice)` pays once for the whole shared answer, while `applySharedFact(factId, list)` costs gas only. An Intake price above maxPrice reverts atomically. Shared facts have one pending request and one accepted answer each. Personal pairs have one pending request and one permanent accepted fact each. No ETH is accepted by these functions; no owner, pause or upgrade exists.
 
-- `claimSponsored(traitId)` from launch (no 30-day wait), by a Curator member for their own wallet,
-  one catalog chain trait per call, once per `(wallet, traitId)` ever (`poolUsed`, set whatever the outcome), refused
-  while the pair is pending or verified or while the pool is below `priceOf`.
-
-Both paths share **one catalog chain request per wallet per UTC day**, with `uint64 lastPoolDay(wallet)` storing
-`block.timestamp / 1 days`. Zero means unused on the launch chain in 2026. `PoolDailyLimit(wallet)` refuses another
-trait on the same day. `poolUsed` bounds each wallet to **nine requests over its lifetime**, across both paths and
-all IDMD tokens. `IdmdSponsorExhausted(tokenId)` refuses a tenth IDMD-funded request; `NoTraits` rejects empty
-arrays and `TooManyTraits` rejects arrays longer than one. Reverted transactions consume no allowance; submitted
-requests retain their usage after a miss, failure or abandonment. Paid upgrades and shared-fact requests are
-unrestricted by these pool limits. A spec costs 6.4 IMD; with a first claim at 0.5 IMD, the total is 6.9 IMD plus gas.
-
-Panel traits, shared facts and community specs are never paid by the pool. No owner, no upgrade, no pause, no token;
-pool money is an irrevocable donation (`CONCEPT.md` section 4 states the policy).
-
-## 7. Name table (filled by the entrant on 2026-10-16)
-
-The pool covers Uptime, Holdout, Final Token, Hotfix and the five PID ids below. IDMD holders who are list members
-draw one catalog chain request per day, nine per token and nine per wallet over a lifetime; every list member
-likewise has one per day from launch, with no 30-day wait. Both paths share the UTC-day and per-wallet limits
-specified in section 6. Community spec registration costs 6.4 IMD; community requests are paid by their claimant.
+## 7. Name table
 
 | id | working name | final name |
 |---|---|---|
@@ -234,7 +210,7 @@ specified in section 6. Community spec registration costs 6.4 IMD; community req
 | 301 to 303 | Climber | Hopper (`Hopper >= 3 / 5 / 10`) |
 | 401 to 404 | Capital | Bullfrog (`Bullfrog >= 1 / 10 / 100 / 800 ETH`) |
 | 501 to 503 | Scoreboard | Benchmarked (`Benchmarked >= 1000 / 3162 / 10000`) |
-| 601 | Operator | Armed |
+| 601 | Operator | Swarmed |
 | 701 | Still here | Uptime |
 | 801 | Last stand | Holdout |
 | 901 | The last one in | Final Token |
@@ -250,18 +226,6 @@ the collection strings `ERC721("Sworn", "SWORN")` with metadata names `Sworn #<t
 replaced this table and the collection strings; it touched no rule, id or window. Section 3 keeps the working names
 in its first column as the historical key; the id is the identity.
 
-## 8. Not frozen (open)
+## 8. Operational assumptions
 
-- Panel 5 / quorum 3 for chain questions is a default, not a measurement; if the first job's requests stall, 7 / 4.
-- `validForSeconds` 30 days is a wish: the plane has served attestations with 86,400; the registry checks only
-  `expiresAt`.
-- Whether the launch pipeline accepts a registry that deploys its renderer in its constructor (fallback: two
-  launches, renderer first, then the registry with the renderer as a static argument).
-- T5's round-2 wording (account nonce only, no explorer fallback) passed the free check and a free quote; it has not
-  been attested yet. The 2026-10-11 wording was attested twice (true 7/11, false 7/11). A paid re-attestation of the
-  new wording is planned with the first real request from the registry on Sepolia.
-- Whether the plane ever signs chain evidence with `agreed` below `quorum`. The registry refuses such an attestation
-  (reason 5, `a.agreed < a.quorum`), so if the plane does sign one it is a paid request that ends as a miss. Open
-  until the plane documents that it signs only agreed verdicts.
-- The attestation struct, the callback shapes and the `questionHash` document are in `INTEGRATION.md`, read from
-  the Intake's verified source, five mainnet completions and fourteen free quotes.
+Facts attest the claimant, never the current card holder. An oracle answer is permanent once accepted. Its expiry bounds admission, not the stored fact's lifetime. Swarmed attributes entries to the wallet's own seat-holding intervals; former holders and later holders can each qualify independently. Missing archive evidence means no answer, never false. The single fixed attester, Intake and archive recipe dependencies are detailed in DISCLOSURE.md. A request that misses or never arrives receives no refund.

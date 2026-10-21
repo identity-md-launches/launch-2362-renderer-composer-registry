@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
+import {MockBurnExecutor} from "./mocks/MockBurnExecutor.sol";
 
 import {Base} from "./Base.t.sol";
 import {stdStorage, StdStorage, stdError} from "forge-std/Test.sol";
@@ -196,26 +197,18 @@ contract ReReviewTest is Base {
         WritingCurator w = new WritingCurator();
         vm.expectRevert();
         new Registry(
-            address(w),
-            address(idmd),
-            address(imd),
-            address(intake),
-            attester,
-            address(renderer),
-            address(composer),
-            address(0)
+            address(w), address(imd), address(intake), attester, address(renderer), address(composer), address(executor)
         );
         assertEq(w.reads(), 0, "a static call cannot change the Curator");
         // The settled mock at the real address deploys, and the registry is fully usable.
         Registry r = new Registry(
             CURATOR_ADDR,
-            address(idmd),
             address(imd),
             address(intake),
             attester,
             address(renderer),
             address(composer),
-            address(0)
+            address(executor)
         );
         assertEq(address(r.curator()), CURATOR_ADDR);
     }
@@ -236,12 +229,12 @@ contract ReReviewTest is Base {
 
     // ------------------------------------------------------------------ (n) consumed once, per request
 
-    function test_sameSignedEvidenceSatisfiesAnotherRequestWithTheSameQuestion() public {
+    function test_oldSignedEvidenceCannotSatisfyASuccessorAfterAbandon() public {
         bytes32 r1 = ask(alice, 701);
         OracleAttestation memory a = attestationFor(r1, word(1));
         a.expiresAt += 2 days; // outlives the 31-day abandon window
         bytes memory sig = sign(a);
-        vm.warp(block.timestamp + 31 days);
+        vm.warp(block.timestamp + 31 days + 1);
         vm.prank(alice);
         registry.abandon(r1);
         bytes32 r2 = ask(alice, 701);
@@ -252,11 +245,11 @@ contract ReReviewTest is Base {
         emit Registry.Missed(r1, 0, 1);
         assertTrue(deliver(r1, a, sig));
         assertEq(registry.pendingOf(alice, 701), r2);
-        // The same signed evidence satisfies the successor request.
+        // Issuance bounds reject stale evidence even for an identical canonical question.
         assertTrue(deliver(r2, a, sig));
-        assertTrue(registry.hasTrait(alice, 701));
+        assertFalse(registry.hasTrait(alice, 701));
         (bytes32 vr,,,) = registry.verified(alice, 701);
-        assertEq(vr, r2);
+        assertEq(vr, bytes32(0));
         // And the successor, once consumed, is consumed for good.
         vm.expectEmit(false, false, false, true, address(registry));
         emit Registry.Missed(r2, 0, 1);

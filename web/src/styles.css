@@ -333,7 +333,7 @@ footer { border-top: 1px solid var(--rule); margin-top: 18px; }
   .intro-copy p, .measure { font-size: 14px; }
 }
 
-/* Wallet and pool additions reuse the reviewed palette, type and square controls. */
+/* Wallet additions reuse the reviewed palette, type and square controls. */
 .connect-control { margin-inline-start: auto; flex: none; order: 2; }
 .header-inner nav { order: 1; }
 .connect-sheet { padding: 0; border: 1px solid var(--rule); background: var(--bg); color: var(--text); width: min(420px, calc(100% - 32px)); max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; }
@@ -345,10 +345,5 @@ footer { border-top: 1px solid var(--rule); margin-top: 18px; }
 .wallet-row, button.wallet-row { width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: flex-start; gap: 14px; padding: 10px 12px; margin-block: 8px; border: 1px solid var(--faint); color: var(--text); text-decoration: none; text-align: start; }
 .wallet-row img { width: 28px; height: 28px; flex: none; }
 .wallet-row:disabled { opacity: .6; }
-.pool-prices { margin-block: 16px; }
-.pool-prices dl { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 0 0 12px; }
-.pool-prices dt { color: var(--muted); }
-.pool-prices dd { margin: 6px 0 0; overflow-wrap: anywhere; }
-.pool-prices dd .source { display: block; }
 @media (max-width: 1100px) { .header-inner nav { flex-basis: 100%; order: 3; } }
 @media (max-width: 640px) { .connect-sheet { margin: auto 0 0; width: 100%; max-width: none; max-height: 90dvh; border-bottom: 0; } }

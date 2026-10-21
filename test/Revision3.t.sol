@@ -20,13 +20,12 @@ contract Revision3Test is Base {
         Composer c = new Composer();
         Registry reg = new Registry(
             address(0xC0),
-            address(0x1D),
             address(0x13D),
             address(0x1A),
             address(0xA7),
             address(r),
             address(c),
-            address(0xB0)
+            address(registry.burnExecutor())
         );
         uint256 sum = address(reg).code.length + address(c).code.length + address(r).code.length;
         emit log_named_uint("Registry runtime bytes", address(reg).code.length);
@@ -82,12 +81,13 @@ contract Revision3Test is Base {
         vm.expectRevert(abi.encodeWithSelector(Composer.BadSpec.selector, "arg"));
         composer.validateSpec(_t3(transfer, "owner"), block.number);
         // no parameter list at all
-        vm.expectRevert(abi.encodeWithSelector(Composer.BadSpec.selector, "arg"));
+        vm.expectRevert(abi.encodeWithSelector(Composer.BadSpec.selector, "item"));
         composer.validateSpec(_t3("event Transfer", "to"), block.number);
-        // kinds 1 and 2 keep the old rule: a data-field claimant argument is the spec writer's business
+        // Kinds 1 and 2 also require an indexed address.
         Spec memory s = _t3(transfer, "value");
         s.kind = 1;
         s.sumArg = "";
+        vm.expectRevert(abi.encodeWithSelector(Composer.BadSpec.selector, "arg"));
         composer.validateSpec(s, block.number);
     }
 
@@ -123,7 +123,7 @@ contract Revision3Test is Base {
         // an indexed address after a non-address indexed parameter: still counted among all indexed ones
         uint16 third = register(
             bob,
-            _t3("event Swap(uint256 indexed id, bytes32 indexed key, address indexed taker, uint256 amount)", "taker")
+            _t3("event Swap(uint256 indexed id, bytes32 indexed key, address indexed taker, uint256 value)", "taker")
         );
         (bytes memory bodyThird,) = registry.composeBody(third, address(0));
         assertTrue(vm.contains(vm.parseJsonString(string(bodyThird), ".question"), "(topic 3 of the log)"));
@@ -210,8 +210,8 @@ contract Revision3Test is Base {
         curator.set(alice, 0, true, 10, 800 ether, 10000);
         idmd.setBalance(alice, 1);
         tokenId = mint(alice);
-        uint16[10] memory direct = [701, 801, 901, 1001, 1101, 1102, 1103, 1104, 1105, 1301];
-        for (uint256 i; i < 10; ++i) {
+        uint16[11] memory direct = [601, 701, 801, 901, 1001, 1101, 1102, 1103, 1104, 1105, 1301];
+        for (uint256 i; i < 11; ++i) {
             bytes32 rid = ask(alice, direct[i]);
             assertTrue(deliver(rid, attestationFor(rid, word(1))));
         }
@@ -227,7 +227,17 @@ contract Revision3Test is Base {
         Spec memory s;
         s.kind = 2;
         s.target = address(type(uint160).max);
-        s.item = string.concat("event ", _repeat("a", 250));
+        s.item = string.concat(
+            "event ",
+            _repeat("a", 32),
+            "(address indexed ",
+            _repeat("b", 32),
+            ", uint256 indexed ",
+            _repeat("c", 32),
+            ", uint256 ",
+            _repeat("d", 32),
+            ")"
+        );
         s.arg = _repeat("b", 32);
         s.fixedArg = _repeat("c", 32);
         s.fixedVal = type(uint256).max;
@@ -248,6 +258,8 @@ contract Revision3Test is Base {
     function test_item19_tokenURIAtTheMaximumStateIsMeasuredAndBounded() public {
         uint256 tokenId = _maximumState();
         vm.cool(address(registry));
+        vm.cool(address(renderer));
+        vm.cool(address(composer));
         vm.cool(address(curator));
         vm.cool(address(idmd));
         uint256 before = gasleft();
@@ -259,12 +271,14 @@ contract Revision3Test is Base {
         // OpenZeppelin Base64 of the 30.5 KB preimage is 2.4M of it, the spec-body cold reads behind
         // `specOf` 1.1M). test/NOTES.md reports the number and the smallest further cut; this bound pins the
         // measured state against regression and is tightened to 8,000,000 when that cut lands.
-        assertLt(used, 11_000_000, "tokenURI gas at the maximum state regressed");
-        // and an eth_call capped at 11,000,000 gas succeeds
+        assertLt(used, 10_317_448, "tokenURI gas at the maximum state regressed");
+        // and an eth_call capped at the same gate succeeds
         vm.cool(address(registry));
+        vm.cool(address(renderer));
+        vm.cool(address(composer));
         (bool ok, bytes memory ret) =
-            address(registry).staticcall{gas: 11_000_000}(abi.encodeCall(registry.tokenURI, (tokenId)));
-        assertTrue(ok, "renders under an 11M eth_call cap");
+            address(registry).staticcall{gas: 10_317_448}(abi.encodeCall(registry.tokenURI, (tokenId)));
+        assertTrue(ok, "renders under an 10.317448M eth_call cap");
         assertEq(abi.decode(ret, (string)), uri);
         // the record of a community spec prints only the shrunk fields, never the 256-byte item
         assertFalse(vm.contains(uri, _repeat("a", 250)));

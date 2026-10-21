@@ -8,11 +8,6 @@
         "internalType": "address"
       },
       {
-        "name": "idmd_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "imd_",
         "type": "address",
         "internalType": "address"
@@ -60,46 +55,7 @@
   },
   {
     "type": "function",
-    "name": "BURN_FEE_CAP",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "BURN_MIN",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "MINT_FEE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "POOL_DRAW_CAP",
     "inputs": [],
     "outputs": [
       {
@@ -308,28 +264,10 @@
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IBurnExecutor"
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "claimSponsored",
-    "inputs": [
-      {
-        "name": "traitId",
-        "type": "uint16",
-        "internalType": "uint16"
-      },
-      {
-        "name": "maxPrice",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -493,19 +431,6 @@
   },
   {
     "type": "function",
-    "name": "idmd",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IIDMD"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "imd",
     "inputs": [],
     "outputs": [
@@ -550,25 +475,6 @@
         "name": "",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "lastPoolDay",
-    "inputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint64",
-        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -842,43 +748,6 @@
         "name": "questionHash",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "pool",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "poolUsed",
-    "inputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -1200,38 +1069,6 @@
   },
   {
     "type": "function",
-    "name": "sponsor",
-    "inputs": [
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "sponsoredVerified",
-    "inputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "supportsInterface",
     "inputs": [
       {
@@ -1534,50 +1371,6 @@
   },
   {
     "type": "event",
-    "name": "BurnSkipped",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "reason",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "uint8"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "BurnTriggered",
-    "inputs": [
-      {
-        "name": "claimant",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "nativeFee",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "CardMinted",
     "inputs": [
       {
@@ -1678,31 +1471,6 @@
   },
   {
     "type": "event",
-    "name": "PoolSpent",
-    "inputs": [
-      {
-        "name": "claimant",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "traitId",
-        "type": "uint16",
-        "indexed": true,
-        "internalType": "uint16"
-      },
-      {
-        "name": "requestId",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "SharedFactStored",
     "inputs": [
       {
@@ -1741,25 +1509,6 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "Sponsored",
-    "inputs": [
-      {
-        "name": "from",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1893,11 +1642,6 @@
         "internalType": "uint16"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "BurnRefundFailed",
-    "inputs": []
   },
   {
     "type": "error",
@@ -2036,11 +1780,6 @@
   },
   {
     "type": "error",
-    "name": "InsufficientGas",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "ListMismatch",
     "inputs": []
   },
@@ -2059,17 +1798,6 @@
     "type": "error",
     "name": "NoTraits",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotACatalogChainTrait",
-    "inputs": [
-      {
-        "name": "traitId",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ]
   },
   {
     "type": "error",
@@ -2110,66 +1838,12 @@
   },
   {
     "type": "error",
-    "name": "NotMember",
-    "inputs": [
-      {
-        "name": "wallet",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "NotPending",
     "inputs": [
       {
         "name": "requestId",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "PoolAlreadyUsed",
-    "inputs": [
-      {
-        "name": "claimant",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "traitId",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "PoolDailyLimit",
-    "inputs": [
-      {
-        "name": "wallet",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "PoolDrawTooLarge",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "PoolLifetimeLimit",
-    "inputs": [
-      {
-        "name": "wallet",
-        "type": "address",
-        "internalType": "address"
       }
     ]
   },
@@ -2193,6 +1867,17 @@
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RequestIdTaken",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",

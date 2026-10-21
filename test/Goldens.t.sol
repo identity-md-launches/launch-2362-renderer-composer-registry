@@ -58,6 +58,11 @@ contract GoldensTest is Base {
         a = attestationFor(rid, word(1));
         a.requestId = ORACLE_2;
         assertTrue(deliver(rid, a));
+        intake.forceNextId(bytes32(uint256(0x3333333333333333333333333333333333333333333333333333333333333333)));
+        rid = ask(AC1A1, 601);
+        a = attestationFor(rid, word(1));
+        a.requestId = 0x4444444444444444444444444444444400000000000000000000000000000000;
+        assertTrue(deliver(rid, a));
         _assertGolden("synthetic_oracle", registry.tokenURI(2), renderer.cardOfOn(address(registry), 2));
     }
 
@@ -116,7 +121,7 @@ contract GoldensTest is Base {
         s.threshold = 1000;
         s.fromBlock = B_DEPLOY;
         s.toBlock = B_END;
-        s.name = 'a"b\\c<d>&e';
+        s.name = 'a"b\\c<d>&e\'';
         for (uint256 i; i < 32; ++i) {
             c.oracle[i] =
                 OracleMeta(uint16(10001 + i), s.kind, s.fromBlock, s.toBlock, s.target, REQUEST_1, ORACLE_1, s.name);
@@ -299,7 +304,7 @@ contract GoldensTest is Base {
 
     function test_imageRingsByCommunityCount() public view {
         uint16[13] memory top;
-        top[5] = 601; // Armed sits in the centre slot, so its rings come first
+        top[5] = 601; // Swarmed sits in the centre slot, so its rings come first
         uint256[5] memory counts = [uint256(0), 1, 14, 27, 39];
         uint256[5] memory ringsInCentre = [uint256(0), 1, 2, 3, 3];
         uint256[5] memory ringsTotal = [uint256(0), 1, 14, 27, 39];

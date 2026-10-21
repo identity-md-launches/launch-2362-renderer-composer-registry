@@ -8,11 +8,8 @@ import {OracleAttestation} from "../src/interfaces/IOracleConsumer.sol";
 import {Spec} from "../src/Types.sol";
 
 /// @notice A wider random walk over the registry (CONCEPT.md section 6, invariants 1, 2, 3, 4, 7, 9):
-///         paid and pool-funded upgrades, true, false, tampered and failed completions, abandons
-///         after 31 days, spec registration, shared facts and their application, plain donations and
 ///         transfers. Ghost state records what the handler itself delivered, so the invariants can
 ///         say that a trait is marked exactly when a passing attestation was delivered for that pair,
-///         that pool money leaves only through pool-funded requests, and that no request is consumed
 ///         twice. Expected reverts are guarded (`fail_on_revert = true`).
 contract FullHandler is Base {
     address[] internal actors;
@@ -21,16 +18,10 @@ contract FullHandler is Base {
     uint16[] public specIds;
     bytes32[] public openRequests; // pending ids the handler created and has not settled
 
-    uint256 public poolIn;
-    uint256 public poolSpent;
     uint256 public deliveries;
     uint256 public replays; // replayConsumed calls that reached the registry
     mapping(address => mapping(uint16 => bool)) public ghostVerified;
-    mapping(address => mapping(uint16 => bool)) public ghostPoolUsed;
     mapping(address => uint256) public ghostCommunityCount;
-    mapping(address => uint64) public ghostLastPoolDay;
-    mapping(address => uint256) public ghostPoolRequests;
-    mapping(uint256 => uint8) public ghostIdmdSponsored;
     mapping(bytes32 => bool) public ridConsumed; // a request id that has been completed or abandoned
     mapping(bytes32 => bool) public ridMarked; // a request id that marked a trait or a fact
     mapping(uint16 => bytes32) public specHash;
@@ -82,7 +73,6 @@ contract FullHandler is Base {
         address a = _actor(seed);
         if (registry.tokenOf(a) != 0) return;
         mint(a);
-        poolIn += 0.1 ether;
     }
 
     function transfer(uint256 seed, uint256 to) external {
@@ -91,21 +81,6 @@ contract FullHandler is Base {
         if (id == 0 || registry.ownerOf(id) != a) return;
         vm.prank(a);
         registry.transferFrom(a, _actor(to), id);
-    }
-
-    function sponsor(uint256 seed, uint256 amount) external {
-        amount = bound(amount, 0, 3 ether);
-        address a = _actor(seed);
-        fund(a, amount);
-        vm.prank(a);
-        registry.sponsor(amount);
-        poolIn += amount;
-    }
-
-    function donate(uint256 amount) external {
-        amount = bound(amount, 0, 1 ether);
-        imd.mint(address(registry), amount);
-        poolIn += amount;
     }
 
     // ------------------------------------------------------------------ asking
@@ -121,28 +96,6 @@ contract FullHandler is Base {
 
     function advanceTime(uint32 elapsed) external {
         vm.warp(vm.getBlockTimestamp() + bound(elapsed, 1, 3 days));
-    }
-
-    function _recordPoolRequest(address a, uint16 id) internal {
-        uint64 day = uint64(block.timestamp / 1 days);
-        assertGt(day, ghostLastPoolDay[a], "only one request per wallet per UTC day");
-        ghostLastPoolDay[a] = day;
-        ghostPoolRequests[a]++;
-        poolSpent += PRICE;
-        ghostPoolUsed[a][id] = true;
-        openRequests.push(registry.pendingOf(a, id));
-    }
-
-    function claimSponsored(uint256 seed, uint256 which) external {
-        address a = _actor(seed);
-        uint16 id = catalogChain[which % catalogChain.length];
-        (, bool joined) = curator.firstHourOf(a);
-        if (!joined || registry.lastPoolDay(a) == block.timestamp / 1 days) return;
-        if (registry.poolUsed(a, id) || registry.pool() < 8 * PRICE || registry.sponsoredVerified(a) >= 9) return;
-        if (registry.pendingOf(a, id) != 0 || ghostVerified[a][id]) return;
-        vm.prank(a);
-        registry.claimSponsored(id, PRICE);
-        _recordPoolRequest(a, id);
     }
 
     function registerSpec(uint256 seed, uint8 kind) external {
@@ -165,7 +118,6 @@ contract FullHandler is Base {
         if (kind == 5) s.toBlock = B_DEPLOY;
         if (kind == 5) s.fromBlock = B_DEPLOY;
         uint16 id = register(a, s);
-        poolIn += registry.SPEC_FEE();
         specIds.push(id);
         specHash[id] = keccak256(abi.encode(registry.specOf(id)));
     }
@@ -222,10 +174,15 @@ contract FullHandler is Base {
         (bytes32 rid, address c, uint16 t) = _pick(seed);
         if (rid == 0) return;
         OracleAttestation memory a = attestationFor(rid, _answerFor(t, c, true, seed));
+        (,, uint64 requestedAt,) = registry.pendingRequest(rid);
+        a.issuedAt = requestedAt;
+        a.expiresAt = requestedAt + 30 days;
         require(deliver(rid, a), "delivered");
         deliveries++;
         _removeOpen(rid);
         ridConsumed[rid] = true;
+        bool accepted = block.timestamp <= uint256(a.issuedAt) + 30 days;
+        if (!accepted) return;
         ridMarked[rid] = true;
         if (c == address(0)) {
             ghostFactStored[t] = true;
@@ -278,7 +235,7 @@ contract FullHandler is Base {
         (bytes32 rid,,) = _pick(seed);
         if (rid == 0) return;
         (address claimant, uint16 t, uint64 at,) = registry.pendingRequest(rid);
-        if (block.timestamp < uint256(at) + 31 days) vm.warp(uint256(at) + 31 days);
+        if (block.timestamp < uint256(at) + 31 days + 1) vm.warp(uint256(at) + 31 days + 1);
         vm.prank(claimant != address(0) ? claimant : sharedPayer[t]);
         registry.abandon(rid);
         _removeOpen(rid);
@@ -364,6 +321,9 @@ contract FullHandler is Base {
 /// forge-config: default.invariant.runs = 96
 /// forge-config: default.invariant.depth = 48
 contract InvariantsExtendedTest is Test {
+    function invariant_feesLeaveTheRegistry() public view {
+        assertEq(registry.imd().balanceOf(address(registry)), 0);
+    }
     FullHandler internal h;
     Registry internal registry;
 
@@ -371,34 +331,21 @@ contract InvariantsExtendedTest is Test {
         h = new FullHandler();
         registry = h.theRegistry();
         targetContract(address(h));
-        bytes4[] memory sel = new bytes4[](16);
+        bytes4[] memory sel = new bytes4[](13);
         sel[0] = FullHandler.mintCard.selector;
         sel[1] = FullHandler.transfer.selector;
-        sel[2] = FullHandler.sponsor.selector;
-        sel[3] = FullHandler.donate.selector;
-        sel[4] = FullHandler.upgradePaid.selector;
-        sel[5] = FullHandler.claimSponsored.selector;
-        sel[6] = FullHandler.registerSpec.selector;
-        sel[7] = FullHandler.requestSharedFact.selector;
-        sel[8] = FullHandler.deliverTrue.selector;
-        sel[9] = FullHandler.deliverFalse.selector;
-        sel[10] = FullHandler.deliverTampered.selector;
-        sel[11] = FullHandler.failRequest.selector;
-        sel[12] = FullHandler.abandonLate.selector;
-        sel[13] = FullHandler.applyShared.selector;
-        sel[14] = FullHandler.replayConsumed.selector;
-        sel[15] = FullHandler.advanceTime.selector;
+        sel[2] = FullHandler.upgradePaid.selector;
+        sel[3] = FullHandler.registerSpec.selector;
+        sel[4] = FullHandler.requestSharedFact.selector;
+        sel[5] = FullHandler.deliverTrue.selector;
+        sel[6] = FullHandler.deliverFalse.selector;
+        sel[7] = FullHandler.deliverTampered.selector;
+        sel[8] = FullHandler.failRequest.selector;
+        sel[9] = FullHandler.abandonLate.selector;
+        sel[10] = FullHandler.applyShared.selector;
+        sel[11] = FullHandler.replayConsumed.selector;
+        sel[12] = FullHandler.advanceTime.selector;
         targetSelector(FuzzSelector({addr: address(h), selectors: sel}));
-    }
-
-    function test_handlerSponsoredSelectionAcceptsMaxSeed() public {
-        h.sponsor(2, 2 ether);
-        h.sponsor(2, 2 ether);
-        h.sponsor(2, 2 ether);
-        h.claimSponsored(12_242_742, type(uint256).max);
-        assertEq(h.openCount(), 1);
-        assertEq(h.poolSpent(), 0.5 ether);
-        assertEq(registry.pool(), h.poolIn() - h.poolSpent());
     }
 
     function test_handlerReplayOfAConsumedIdChangesNothing() public {
@@ -412,20 +359,7 @@ contract InvariantsExtendedTest is Test {
         (bytes32 after_,,,) = registry.verified(c, 701);
         assertEq(after_, rid, "a replayed settled id leaves the verification intact");
         assertTrue(registry.hasTrait(c, 701));
-        assertEq(registry.pool(), h.poolIn() - h.poolSpent());
-    }
-
-    /// @dev Invariant 9: the balance is fees plus donations minus pool-funded requests, exactly.
-    function invariant_poolIsFeesPlusDonationsMinusSponsoredRequests() public view {
-        assertEq(registry.pool(), h.poolIn() - h.poolSpent());
-    }
-
-    function invariant_poolDailyAndLifetimeLimits() public view {
-        for (uint256 i; i < h.actorCount(); ++i) {
-            address a = h.actorAt(i);
-            assertEq(registry.lastPoolDay(a), h.ghostLastPoolDay(a));
-            assertLe(h.ghostPoolRequests(a), 9, "nine per wallet over both pool paths");
-        }
+        assertEq(registry.imd().balanceOf(address(registry)), 0);
     }
 
     /// @dev Invariants 3 and 4: a pair is marked exactly when the handler delivered a passing
@@ -449,9 +383,6 @@ contract InvariantsExtendedTest is Test {
                     (address pc, uint16 pt,,) = registry.pendingRequest(pending);
                     assertEq(pc, c);
                     assertEq(pt, t);
-                }
-                if (t <= 1301 && t != 1201 && t != 1301 && registry.poolUsed(c, t)) {
-                    assertTrue(h.ghostPoolUsed(c, t), "a reservation only comes from a pool draw");
                 }
             }
             assertEq(registry.verifiedSpecsOf(c).length, community, "community index has no duplicates");

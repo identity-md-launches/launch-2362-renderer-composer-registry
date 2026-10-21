@@ -33,7 +33,7 @@ test('F-18.17: the catalog is one segment per class, each with meaning, how it i
  assert.deepEqual(CLASS_SEGMENTS.map(s=>s.cls),['direct','chain-proven','shared','panel']);
  for(const s of CLASS_SEGMENTS){for(const k of ['meaning','sworn','get','cost','risk','step'] as const)assert(s[k].length>10,`${s.cls}.${k}`);assert.match(s.link,/^#\/claim#step-0[1-4]$/);}
  assert.equal(CLASS_SEGMENTS.reduce((n,s)=>n+CATALOG.filter(t=>t.evidence===s.cls).length,0),25,'every catalog row lands in exactly one segment');
- assert.match(COMMUNITY_SEGMENT.link,/#step-04$/);const pages=src('pages.tsx');assert(pages.includes('placeholder-row')&&pages.includes('Read registered community specs by id'));
+ assert.match(COMMUNITY_SEGMENT.link,/#step-03$/);const pages=src('pages.tsx');assert(pages.includes('placeholder-row')&&pages.includes('Read registered community specs by id'));
  assert(src('Claim.tsx').includes('id={`step-${n}`}'),'the claim steps carry the anchors the catalog links to');
 });
 test('F-18.18: the claim guide keeps the explanation and flow after the first-screen mint',()=>{

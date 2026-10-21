@@ -1,0 +1,28 @@
+{
+  "answerType": "bool",
+  "chainId": 1,
+  "consumer": {
+    "chainId": 1,
+    "verifyingContract": "0x000000000000000000000000000000000000c0de"
+  },
+  "definitions": {
+    "method": "Four steps, executed in order as one procedure: seats (step 1), agent (step 2), accepted (step 3), answer (step 4). Every read is of Ethereum mainnet archive logs and state up to block 26237654 inclusive. A pruned, null or partial log read, or an endpoint without the window, is no evidence: write no answer, never false.",
+    "seats": "Step 1, seats. Every Transfer(from, to, tokenId; all indexed) log of the IdentityMD collection 0x0000eC93127BAA929E58E97dd0095A2BFb38ec1D from block 25090085 to 26237654 whose from or to is 0x000000000000000000000000000000000000c1a1. Per tokenId, a holding interval runs from the block of a transfer to the wallet (inclusive) to the block of the next transfer of that token away from it (exclusive); an interval still open at 26237654 ends at 26237654 inclusive. Same-block transfers are ordered by log index.",
+    "agent": "Step 2, the agents of a seat. The AgentBound(uint256 indexed agentId, uint8 indexed standard, address indexed tokenContract, uint256 tokenId, address registeredBy) logs of the adapter 0xde152AfB7db5373F34876E1499fbD893A82dD336 with tokenContract equal to the collection and tokenId equal to the seat. An agent is bound to the seat from the block of its AgentBound log on. A seat without a binding has no agent and counts nothing.",
+    "accepted": "Step 3, accepted jobs. The NewFeedback logs (topic 0 0x6a4a61743519c9d648a14e6493f47dbe3ff1aa29e7785c96c8326a205e58febc) of the reputation registry 0x8004baa17c55a88189ae136b182e5fda19de9b63 whose topic 2 is the batcher 0xb6d0a187b050fa5bb0b87033a203f37becf4a775, whose second data word (bytes 32 to 63) equals 1, whose block lies inside one of the wallet's holding intervals of a seat, and whose topic 1 is an agent bound to that seat at or before the log's block. Each such log is one entry.",
+    "answer": "Step 4, the answer. true when the entries of step 3, summed over every seat the wallet held, number at least 3; false otherwise. Count entries, not distinct jobs; a log whose second data word is not 1 counts nothing.",
+    "true": "true only if complete historical log reads establish at least 3 entries under the method.",
+    "false": "false only if complete historical log reads establish fewer than 3 entries under the method. If a read is pruned, null, partial or unavailable, write no answer; never answer false from an incomplete read.",
+    "window": "The window is blocks 25090085 to 26237654 inclusive on Ethereum mainnet; it fixes which logs and chain state count. The current head is not the window."
+  },
+  "evidence": "panel",
+  "panelSize": 11,
+  "question": "Up to block 26237654 on Ethereum mainnet, did the wallet 0x000000000000000000000000000000000000c1a1 operate an IdentityMD seat through at least 3 accepted Identity.md swarm jobs while it held that seat? Answer true or false.",
+  "quorum": 7,
+  "v": 1,
+  "validForSeconds": 2592000,
+  "window": {
+    "fromBlock": 25090085,
+    "toBlock": 26237654
+  }
+}

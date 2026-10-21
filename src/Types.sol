@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-/// @notice A community spec (CATALOG.md section 5). Field order is the ABI; `evidence` is derived
-///         from `kind` (chain for 1 to 4, panel for 5).
+/// @notice A catalog or community spec (CATALOG.md section 5). Field order is the ABI; `evidence` is derived
+///         from `kind` (chain for 1 to 4, panel for 5 and 6).
 struct Spec {
-    uint8 kind; // 1 T1 log-count, 2 T2 log-sum, 3 T3 log-rank (shared), 4 T4 call-compare, 5 T5 panel nonce
-    address target; // T1 to T4; zero for T5
-    string item; // event or function item; charset [A-Za-z0-9_ ,()\[\]], <= 256 bytes, prefix "event " / "function "
+    uint8 kind; // 1 T1 log-count, 2 T2 log-sum, 3 T3 log-rank (shared), 4 T4 call-compare, 5 T5 panel nonce, 6 catalog T6 operator
+    address target; // T1 to T4, collection for T6; zero for T5
+    string item; // closed event/function signature grammar, <= 256 bytes; empty for T5/T6
     string arg; // [A-Za-z0-9_], 1..32 bytes; T1/T2 the claimant argument, T3 the groupBy key; empty for T4/T5
     string fixedArg; // [A-Za-z0-9_], 0..32 bytes; empty = no second filter (T1/T2 only)
     uint256 fixedVal;
@@ -23,7 +23,7 @@ struct Spec {
 ///         Built by the registry for the renderer; never stored in this shape.
 struct OracleMeta {
     uint16 traitId;
-    uint8 kind; // the template: 1 to 5; the panel minima follow from it
+    uint8 kind; // the template: 1 to 6; the panel minima follow from it
     uint64 fromBlock;
     uint64 toBlock;
     address target;

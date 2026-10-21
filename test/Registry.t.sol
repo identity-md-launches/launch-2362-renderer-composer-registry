@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
+import {MockBurnExecutor} from "./mocks/MockBurnExecutor.sol";
 
 import {Base} from "./Base.t.sol";
 import {Registry} from "../src/Registry.sol";
@@ -9,7 +10,6 @@ import {ReentrantIMD, MockIntake} from "./mocks/Mocks.sol";
 import {IERC4906} from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 
 /// @notice CONCEPT.md section 6: cards (1, 2), credentials (3), the callback checks (4, 5), tiers (6),
-///         specs (7), the pool (9), non-members (10), open reads (11).
 contract RegistryTest is Base {
     address internal alice = address(0xA11CE);
     address internal bob = address(0xB0B);
@@ -22,7 +22,7 @@ contract RegistryTest is Base {
         assertEq(registry.tokenOf(alice), 1);
         assertEq(registry.claimantOf(1), alice);
         assertEq(registry.mintedAtBlock(1), uint64(block.number));
-        assertEq(imd.balanceOf(address(registry)), 0.1 ether);
+        assertEq(imd.balanceOf(address(registry)), 0);
         fund(alice, 0.1 ether);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(Registry.AlreadyMinted.selector, alice));
@@ -77,9 +77,9 @@ contract RegistryTest is Base {
         assertFalse(registry.hasTrait(alice, 601), "601 is a snapshot at mint: false without a card");
         assertFalse(registry.hasTrait(alice, 701));
         mint(alice);
-        assertTrue(registry.hasTrait(alice, 601), "frozen at mint");
+        assertFalse(registry.hasTrait(alice, 601), "an operator fact needs an attestation");
         idmd.setBalance(alice, 0);
-        assertTrue(registry.hasTrait(alice, 601), "the seat left, the trait stays");
+        assertFalse(registry.hasTrait(alice, 601), "seat balance is not a credential");
         assertFalse(registry.hasTrait(alice, 9999), "unknown id");
         assertFalse(registry.hasTrait(address(0), 101), "zero address");
         assertFalse(registry.hasTrait(address(0), 601), "zero address, 601");
@@ -113,7 +113,7 @@ contract RegistryTest is Base {
             }
             assertFalse(registry.hasTrait(alice, 202));
         }
-        assertFalse(registry.hasTrait(alice, 601), "no card, no Armed");
+        assertFalse(registry.hasTrait(alice, 601), "no card, no Swarmed");
         assertEq(registry.hasTrait(alice, 202), joined && hour == 0);
         assertEq(registry.hasTrait(alice, 201), joined && hour <= 1);
         assertEq(registry.hasTrait(alice, 302), txs >= 5);
@@ -127,7 +127,7 @@ contract RegistryTest is Base {
         uint256 tokenId = mint(alice);
         uint256 before = imd.balanceOf(address(registry));
         bytes32 rid = ask(alice, 801);
-        assertEq(imd.balanceOf(address(registry)), before, "claimant-paid request leaves the pool unchanged");
+        assertEq(imd.balanceOf(address(registry)), before, "prices leave no balance");
         assertEq(imd.balanceOf(address(intake)), PRICE);
         assertEq(registry.pendingOf(alice, 801), rid);
         (bytes memory body, bytes32 qh) = registry.composeBody(801, alice);
@@ -423,14 +423,14 @@ contract RegistryTest is Base {
         assertEq(registry.pendingOf(alice, 701), rid2);
     }
 
-    function test_abandonOnlyAfterFourteenDaysAndStaleCallbackLeavesSuccessor() public {
+    function test_abandonOnlyAfterThirtyOneDaysAndStaleCallbackLeavesSuccessor() public {
         bytes32 rid = ask(alice, 701);
         vm.expectRevert(Registry.TooEarly.selector);
         registry.abandon(rid);
         vm.warp(block.timestamp + 31 days - 1);
         vm.expectRevert(Registry.TooEarly.selector);
         registry.abandon(rid);
-        vm.warp(block.timestamp + 1);
+        vm.warp(block.timestamp + 2);
         vm.prank(bob);
         vm.expectRevert(Registry.NotClaimant.selector);
         registry.abandon(rid);
@@ -456,11 +456,12 @@ contract RegistryTest is Base {
     function test_strangerCannotDiscardLateValidAnswer() public {
         bytes32 rid = ask(alice, 701);
         OracleAttestation memory a = attestationFor(rid, word(1));
-        a.expiresAt += 2 days; // outlives the 31-day abandon window
+        a.issuedAt = uint64(T0 + 1 days);
+        a.expiresAt = uint64(T0 + 31 days);
         bytes memory sig = sign(a);
         vm.warp(T0 + 31 days);
         vm.prank(bob);
-        vm.expectRevert(Registry.NotClaimant.selector);
+        vm.expectRevert(Registry.TooEarly.selector);
         registry.abandon(rid);
         assertEq(registry.pendingOf(alice, 701), rid);
         assertTrue(deliver(rid, a, sig));
@@ -502,7 +503,7 @@ contract RegistryTest is Base {
         uint16 b = register(bob, t1Spec(address(0xCAFE), "Second"));
         assertEq(a, 10001);
         assertEq(b, 10002);
-        assertEq(imd.balanceOf(address(registry)), 12.8 ether, "fees stay in the registry");
+        assertEq(imd.balanceOf(address(registry)), 0, "fees leave the Registry");
         assertEq(registry.specOf(a).name, "First");
         assertEq(registry.traitName(b), "Second");
         (bytes memory body1,) = registry.composeBody(a, alice);
@@ -671,8 +672,6 @@ contract RegistryTest is Base {
         registry.applySharedFact(1201, _list(1));
     }
 
-    // ------------------------------------------------------------------ 9: the pool
-
     // ------------------------------------------------------------------ reentrancy, 11
 
     function test_reentrantTokenCannotReenterMint() public {
@@ -680,13 +679,12 @@ contract RegistryTest is Base {
         MockIntake evilIntake = new MockIntake(address(evil));
         Registry r = new Registry(
             CURATOR_ADDR,
-            address(idmd),
             address(evil),
             address(evilIntake),
             attester,
             address(renderer),
             address(composer),
-            address(0)
+            address(executor)
         );
         evil.mint(alice, 1 ether);
         vm.prank(alice);
@@ -696,7 +694,7 @@ contract RegistryTest is Base {
         r.mintCard();
         assertTrue(evil.reentryReverted(), "the re-entered mintCard reverted on the guard");
         assertEq(r.tokenOf(alice), 1);
-        assertEq(evil.balanceOf(address(r)), 0.1 ether);
+        assertEq(evil.balanceOf(address(r)), 0);
     }
 
     function test_anyoneReadsAnyWalletAndNothingUsesTxOrigin() public {

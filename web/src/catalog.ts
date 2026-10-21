@@ -1,6 +1,6 @@
 export type Evidence = 'direct' | 'chain-proven' | 'shared' | 'panel';
 export type Trait = {id:number; family:number; name:string; evidence:Evidence; rule:string; window:string; population:string; getter:string};
-export const FAMILIES = ['Spawned','Zero-Shot','Hopper','Bullfrog','Benchmarked','Armed','Uptime','Holdout','Final Token','Hotfix','PID','Top Weights','Pretrained'];
+export const FAMILIES = ['Spawned','Zero-Shot','Hopper','Bullfrog','Benchmarked','Swarmed','Uptime','Holdout','Final Token','Hotfix','PID','Top Weights','Pretrained'];
 const t = (id:number,name:string,evidence:Evidence,rule:string,window:string,population:string,getter:string):Trait => ({id,family:Math.floor(id/100),name,evidence,rule,window,population,getter});
 export const CATALOG: Trait[] = [
  t(101,'Spawned','direct','firstHourOf(A).hasJoined','live','19,522','firstHourOf'),
@@ -9,7 +9,7 @@ export const CATALOG: Trait[] = [
  ...[3,5,10].map((n,i)=>t(301+i,`Hopper >= ${n}`,'direct',`txCountOf(A) >= ${n}`,'live','view; <= 2,037 repeat depositors','txCountOf')),
  ...[1,10,100,800].map((n,i)=>t(401+i,`Bullfrog >= ${n} ETH`,'direct',`contributedBy(A) >= ${n} ETH; largest single send`,'live','15,576-wallet sample; median 0.45 ETH','contributedBy')),
  ...['1,000','3,162','10,000'].map((n,i)=>t(501+i,`Benchmarked >= ${n}`,'direct',`pointsOf(A) >= ${n}`,'live','read from view; no frozen count','pointsOf')),
- t(601,'Armed','direct','held an IDMD seat when the card was minted','at mint','no fixed population','hasDirectTrait'),
+ t(601,'Swarmed','panel','operated a seat through 3 accepted swarm jobs','25,090,085 to request block minus 64','847 qualifying agents measured 2026-10-21','verified'),
  t(701,'Uptime','chain-proven','Deposited(contributor = A), count >= 1','W_JUDGED','3,936','verified'),
  t(801,'Holdout','chain-proven','Deposited(contributor = A, hour = 64)','W_LIFE','7','verified'),
  t(901,'Final Token','chain-proven','Deposited(contributor = A, hour = 65)','W_LIFE','1','verified'),
@@ -19,7 +19,7 @@ export const CATALOG: Trait[] = [
  t(1201,'Top Weights','shared','Top 32 contributors by summed weightAdded','W_LIFE','32','verified / sharedFact'),
  t(1301,'Pretrained','panel','Account nonce >= 20 at launch block','W_DEPLOY','4,765 contributors','verified'),
 ];
-export const ORACLE_IDS = CATALOG.filter(t=>t.id>=701).map(t=>t.id);
+export const ORACLE_IDS = CATALOG.filter(t=>t.id>=601).map(t=>t.id);
 export const CHAIN_IDS = CATALOG.filter(t=>t.evidence==='chain-proven').map(t=>t.id);
 export const isRare = (id:number) => [202,801,901,1001,1201].includes(id) || (id>=1101 && id<=1104);
 export const topOf = (ids:number[]) => FAMILIES.map((_,i)=>{

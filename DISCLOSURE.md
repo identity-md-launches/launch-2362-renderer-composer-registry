@@ -1,5 +1,22 @@
 # Disclosure
 
+## Limits of this deployment
+
+This section describes the new source release prepared on 2026-10-21; confirmed deployment addresses belong to the later service handoff. The records below remain the history of the two earlier deployments.
+
+- Registry is ownerless and non-upgradeable. The single fixed oracle attester is trusted to sign correct evidence; panel agreement is not an independent cryptographic proof of truth. Key rotation, compromised signing or incompatible Intake changes cannot be repaired by a Registry administrator because none exists.
+- Swarmed's living window relies on the IdentityMD collection, adapter `0xde152AfB7db5373F34876E1499fbD893A82dD336`, reputation registry `0x8004baa17c55a88189ae136b182e5fda19de9b63` and batcher `0xb6d0a187b050fa5bb0b87033a203f37becf4a775`. Archive logs and state must cover the full requested interval. The addresses are fixed recipe inputs; incomplete history means no answer. Any prior qualifying agent binding counts, and feedback entries, not distinct jobs, are counted inside each wallet's own holding intervals.
+- Each personal or shared oracle request pays the current Intake price, observed as 0.5 IMD at block 26,237,654. Refusal, disagreement, false answers, missing callbacks and expiration spend that price. maxPrice bounds what the caller accepts, but offers no refund. Pending requests can be cleared strictly after 31 days. Accepted facts remain permanent.
+- Mint (0.1 IMD) and registration (6.4 IMD) fees are forwarded to the BurnExecutor V2 for bridging and burning on Base. Registry guarantees the token forward, not an immediate burn. The executor owner can change its token, OFT, destination and options, and rescue funds. Bridging and the Base burn are separate, permissionless, asynchronous actions; anyone may or may not take them. LayerZero delivery, dust, OFT limits and receiver operation are external dependencies.
+- Composer audit 1043 H-1's field-registration gap and M-2's prose injection path are closed by validation of real fields and a closed signature grammar (items 31 and 32). Its public views intentionally trust arguments, and composition is not a general-purpose validation API. Catalog anchors are exempt from community minimum windows; T4's fromBlock remains hashed; duplicate registrations cost their registrant. Off-mainnet height is a timestamp-derived upper bound, not an oracle of the actual mainnet head.
+- Renderer audit 1044 M-1's offset bounds and L-3's oversized return copying are hardened in item 34, together with invalid-family handling, the 25-id catalog cap and quote escaping. A rendering is not a credential, and its output names no Registry (M-3). Verify `hasTrait` on the trusted Registry.
+- The unbounded `verifiedSpecsOf` read precedes the 32-entry display cap (1044 M-2). The audit estimated unreadability around 124,000 verified specs, costing roughly 62,000 IMD at 0.5 IMD per request. That estimate exceeds this Registry's finite 55,534-spec namespace, but the whole-array read remains a gas-scaling limit and the cap does not bound its cost. No claim is made that arbitrary future RPC gas limits can render every claimant.
+- All seven constructor values are nonzero and Renderer, Composer and executor must always have code. The protected generic empty-chain probe lacks the external executor and therefore conflicts with this approved requirement. This is an explicit deployment-review finding, not a bypass: the local rehearsal supplies coded executor state and the real mainnet fork confirms the configuration. The separate manifest service must replace the historical eight-argument manifest with the seven approved values and the deployment service must simulate the actual dependencies.
+
+The entrant's disclosed seats below remain a potential conflict of interest. Tests use synthetic wallets and do not grant those seats any exceptional rights. This source assignment performed local and fork tests, not an independent audit, live deployment, oracle lab rerun or launch announcement.
+
+## Historical disclosures: the earlier deployments
+
 - The entrant operates three IMD worker seats (IDMD #420, #3 and #7). They may be assigned any swarm job on this
   repository; the entry says so, and the seats are not excluded onchain, because an onchain list would name wallets.
 - The entrant's seats and wallets abstain from the sponsor pool's upgrades and never appear in a showcase, a

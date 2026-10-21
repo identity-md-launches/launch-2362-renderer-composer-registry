@@ -26,35 +26,32 @@ contract FloorProbe {
     }
 }
 
-/// @notice Both launch parameter sets must deploy on an empty dependency floor without an admin.
+/// @notice Both launch parameter sets deploy with coded helpers/executor and three absent read dependencies.
 contract FloorTest is Test {
-    function test_mainnetEmptyChainFloor() public {
+    function test_mainnetReadDependencyFloorWithCodedExecutor() public {
         vm.chainId(1);
         _floor(
             0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91,
-            0x0000eC93127BAA929E58E97dd0095A2BFb38ec1D,
             0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7,
             0xe29386719C155B6847aD5a4E97C6674f10ffc750
         );
     }
 
-    function test_sepoliaEmptyChainFloor() public {
+    function test_sepoliaReadDependencyFloorWithCodedExecutor() public {
         vm.chainId(11155111);
         _floor(
             0x0919ba50b206C3F31D516De818b1fBc7dA21653D,
-            0x2C3013c90a1Bb65573aae9a7C64fafB82697E4e4,
             0x44a1Cd38474FB1748400E7DEb5F8D786ccE3F89A,
             0x097A19e0f021BBA5072701132625ad2401043A2E
         );
     }
 
-    function _floor(address curator, address idmd, address imd, address executor) internal {
+    function _floor(address curator, address imd, address executor) internal {
         FloorProbe probe = new FloorProbe();
         bytes memory rendererCode = vm.getCode("Renderer.sol:Renderer");
         bytes memory composerCode = vm.getCode("Composer.sol:Composer");
-        address[8] memory args = [
+        address[7] memory args = [
             curator,
-            idmd,
             imd,
             0xa43e6F75ee006411F79Ac1C84120606C2330DE82,
             0x5598Aa9146215Bc13eb26f2c692Ad1461Fd32982,
@@ -62,13 +59,13 @@ contract FloorTest is Test {
             _predict(address(probe), bytes32("Composer"), composerCode),
             executor
         ];
-        for (uint256 i; i < 5; ++i) {
+        for (uint256 i; i < 4; ++i) {
             assertEq(args[i].code.length, 0, "dependency floor must be empty");
         }
-        assertEq(executor.code.length, 0, "executor floor must be empty");
+        vm.etch(executor, hex"00"); // the approved constructor always requires a coded executor
         bytes memory registryCode = bytes.concat(
             vm.getCode("Registry.sol:Registry"),
-            abi.encode(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7])
+            abi.encode(args[0], args[1], args[2], args[3], args[4], args[5], args[6])
         );
         address predictedRegistry = _predict(address(probe), bytes32("Registry"), registryCode);
         assertLe(rendererCode.length, 49_152, "Renderer init code exceeds EIP-3860");
@@ -81,8 +78,8 @@ contract FloorTest is Test {
             probe.deployAll(rendererCode, composerCode, registryCode);
         assertEq(vm.getNonce(address(probe)), nonceBefore + 3, "factory must create exactly three contracts");
         assertEq(address(probe).balance, 1 ether, "factory sent ETH");
-        assertEq(deployedRenderer, args[5]);
-        assertEq(deployedComposer, args[6]);
+        assertEq(deployedRenderer, args[4]);
+        assertEq(deployedComposer, args[5]);
         assertEq(deployed, predictedRegistry);
         for (uint256 i; i < args.length; ++i) {
             assertEq(args[i].balance, 0, "dependency received ETH");
@@ -91,18 +88,17 @@ contract FloorTest is Test {
         assertEq(vm.getNonce(deployedRenderer), 1, "Renderer constructor created a contract");
         assertEq(vm.getNonce(deployedComposer), 1, "Composer constructor created a contract");
         assertEq(vm.getNonce(deployed), 1, "Registry constructor created a contract");
+        _runtime(args[4]);
         _runtime(args[5]);
-        _runtime(args[6]);
         _runtime(deployed);
         Registry registry = Registry(deployed);
         assertEq(address(registry.curator()), args[0]);
-        assertEq(address(registry.idmd()), args[1]);
-        assertEq(address(registry.imd()), args[2]);
-        assertEq(address(registry.intake()), args[3]);
-        assertEq(registry.attester(), args[4]);
-        assertEq(address(registry.renderer()), args[5]);
-        assertEq(address(registry.composer()), args[6]);
-        assertEq(address(registry.burnExecutor()), args[7]);
+        assertEq(address(registry.imd()), args[1]);
+        assertEq(address(registry.intake()), args[2]);
+        assertEq(registry.attester(), args[3]);
+        assertEq(address(registry.renderer()), args[4]);
+        assertEq(address(registry.composer()), args[5]);
+        assertEq(address(registry.burnExecutor()), args[6]);
         assertEq(registry.name(), "Sworn");
         assertEq(registry.symbol(), "SWORN");
         assertEq(registry.nextSpecId(), 10001);

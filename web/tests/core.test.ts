@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeEventTopics, parseAbiParameters, parseAbiItem, type Address, type TransactionReceipt } from 'viem';
 import { CATALOG, FAMILIES, CHAIN_IDS, isRare, topOf } from '../src/catalog';
 import { A, SYNTHETIC } from '../src/config';
-import { bridgeValue, BURN_CAP, MIN_BURN } from '../src/chain';
 import { decodeMetadata, attestationUrl, number, units } from '../src/format';
 import { receivedImd, registeredId, friendlyError } from '../src/flow';
 import { assertWallet, type Provider } from '../src/wallet';
@@ -27,9 +26,6 @@ test('attestation links use the first sixteen bytes of oracleRequestId',()=>{
 });
 test('amounts always format as en-US without floating-point conversion',()=>{
  assert.equal(number(12345678901234567890n),'12,345,678,901,234,567,890');assert.equal(units(1234500000000000000000n),'1,234.5');assert.equal(units(1n),'0.000000000000000001');
-});
-test('burn boundaries: below 69, exactly 69, cap equal and above cap',()=>{
- assert.equal(bridgeValue(MIN_BURN-1n,100n),0n);assert.equal(bridgeValue(MIN_BURN,100n),100n);assert.equal(bridgeValue(MIN_BURN,BURN_CAP),BURN_CAP);assert.equal(bridgeValue(MIN_BURN,BURN_CAP+1n),0n);
 });
 test('exact-output calldata pins route, recipients, output, slippage maximum and deadline',()=>{
  const now=1700000000000;const quote={amountOut:100000000000000000n,amountIn:101n,maxInput:103n,quotedAt:now,block:1n,poolId};
@@ -66,6 +62,5 @@ test('wrong chain and changed account are rejected before any send',async()=>{
  provider.request=async({method})=>method==='eth_chainId'?'0x1':[A.Registry];
  await assert.rejects(assertWallet({provider,account:SYNTHETIC,chainId:1,epoch:0}),/Account changed/);
 });
-test('pool errors are stated as recoverable instructions',()=>{
- for(const name of ['PoolDailyLimit','PoolTooSmall','PoolAlreadyUsed','NotMember','PoolLifetimeLimit','PoolDrawTooLarge','ZeroPrice','UnexpectedSpecId','BurnFeeRequired'])assert.notEqual(friendlyError(Error(name)),name);
-});
+
+test('current request errors explain how to retry',()=>{ for(const name of ['ZeroPrice','UnexpectedSpecId'])assert.notEqual(friendlyError(Error(name)),name); });

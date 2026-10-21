@@ -1,7 +1,6 @@
-# TEMPLATES.md: the five question templates
+# TEMPLATES.md: the six question templates
 
-These are the templates of the Sworn registry. Community specs and the v1 oracle traits (`CATALOG.md` section 3) compose their question bodies from exactly these five templates, one per
-recipe kind, so the stored parameters and the text can never disagree. The v4 pool recipes (`v4-volume-rank`,
+These are the templates of the Sworn registry. Community specs support T1 through T5; catalog oracle traits also use T6 for Swarmed (`CATALOG.md` section 3). Each question body comes from one template per recipe kind, so the stored parameters and the text can never disagree. The v4 market recipes (`v4-volume-rank`,
 `univ4-spot`) are not wallet facts and are not offered; a fees-paid panel text was considered, never ran end to end, and is not offered. T2 shares T1's shape with a sum instead of a
 count. **Checked and quoted 2026-10-12, 00:00 UTC (round 2):** all ten fixture bodies passed `POST /requests/check`
 with no blockers (the two T5 bodies carry the plane's usual "reads as chain evidence" suggestion, ignored by design)
@@ -11,7 +10,7 @@ last block as `toBlockHash`. The ten check responses and the ten quote records a
 `reference/plane/questionHashes.json` with the canonical document it hashes (`INTEGRATION.md` section 4, check 7).
 T5's wording changed in round 2 (account nonce only, see below); the previous wording was attested twice on mainnet on
 2026-10-11 (true 7/11, false 7/11) and the new one has not been attested yet. The exact bodies are in
-`templates/fixtures/*.json` (sorted keys, two-space indent); the registry's golden tests must reproduce them byte for
+`templates/fixtures/*.json` (fixture key order, two-space indent); the registry's golden tests must reproduce them byte for
 byte from the stored parameters, with the fixture's synthetic claimant `0x…c1a1` and the fixture's synthetic consumer
 `0x000000000000000000000000000000000000c0de` (the test deploys the registry at that address with forge-std's
 `deployCodeTo` and pins `vm.chainId(1)`; in production the consumer is `address(this)` on the deployment chain). A template that fails a later check is fixed in this
@@ -104,8 +103,7 @@ signature hash in topic 0, so its indexed arguments start at topic 0 and `<K>` w
 `validateSpec` rejects a kind-3 `item` that ends in `anonymous` with `BadSpec("item")` (recheck 2026-10-20, R-M1);
 `<K>` counts indexed parameters of every type, not only addresses.
 
-With 5 / 3 and that error rate a ranked question passes about one attempt in two or three, each attempt at the full
-price; issue #18 raises the kind-3 panel to 11 / 7 in v2 (`INTEGRATION.md` section 4 says what the consumer checks).
+Historically, 5 / 3 often needed multiple paid attempts; the current Composer uses the larger kind-3 panel of 11 / 7 (`INTEGRATION.md` section 4 says what the consumer checks).
 
 ### T4 call-compare (`evidence: chain`, `answerType: bool`)
 
@@ -153,7 +151,7 @@ the question's parenthesis: `(hex <BH>, block hash <HASH>; the block in which th
 0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91 was deployed)` becomes `(hex <BH>; the last block of the spec's window)`;
 `<B>` is the spec's `toBlock` (equal to its `fromBlock`); the definitions are unchanged. Fixture:
 `templates/fixtures/T5-community-composed.json`. A contract cannot read the hash of a block older than 256 blocks; the
-plane pins `toBlockHash` itself. Panel specs are never paid by the sponsor pool.
+plane pins `toBlockHash` itself.
 
 ## The request body
 
@@ -167,16 +165,16 @@ their fixed values:
 | `chainId` | 1 |
 | `window` | `{"fromBlock": <int>, "toBlock": <int>}` (decimal integers in JSON; hex in the text) |
 | `answerType` | `uint256`, `address[]` or `bool` as the template says |
-| `evidence` | `chain` (T1 to T4) or `panel` (T5) |
-| `panelSize`, `quorum` | 5, 3 for chain; 11, 7 for panel |
+| `evidence` | `chain` (T1 to T4) or `panel` (T5/T6) |
+| `panelSize`, `quorum` | 5, 3 for T1/T2/T4; 11, 7 for T3/T5/T6 |
 | `validForSeconds` | 2592000 |
 | `head` | T3 only: the list length the registry reads, at most 32 |
 | `definitions` | an object of ASCII strings, each at most 512 characters, keys as each template lists |
 | `consumer` | `{"chainId": <deployment chainId>, "verifyingContract": "<the registry's address, lowercase hex>"}`: the EIP-712 domain the attester signs for (`INTEGRATION.md` section 4); `block.chainid`, emitted as decimal by `Strings.toString` (11155111 on Sepolia); fixtures retain chain 1 and `0x000000000000000000000000000000000000c0de` |
 
 The plane pins `toBlockHash` itself when it admits the request; the registry never puts a block hash in a body
-except the constant one in trait 1301. Serialisation for the golden tests: keys sorted, two-space indent, as in
-the fixtures. (The Intake accepts any byte-exact JSON; the sorted form only makes the goldens comparable.)
+except the constant one in trait 1301. Serialisation for the golden tests: fixture key order, two-space indent, as in
+the fixtures. (Body key order is fixed for byte comparisons; the canonical hash document always sorts keys separately.)
 
 **The plane's `questionHash`** of a body is `keccak256` of the body reduced to `v`, `chainId`, `question`,
 `definitions`, `answerType`, `window` (`fromBlock` and `toBlock` only), plus `head` when present and `evidence` only
@@ -185,3 +183,35 @@ it composes a body and the callback compares it with the attestation (`INTEGRATI
 `reference/plane/questionHashes.json` holds the plane's value and the canonical document for every fixture.
 `consumer` is excluded, so changing its chain does not change the canonical question hash. Composer's `compose`
 and internal `encodeBody` are views; the external selector of `compose` is unchanged.
+
+## T6 operator (catalog 601, Swarmed)
+
+Catalog-only, evidence `panel`, 11 members / quorum 7, bool, validity 30 days. The window starts at block 25,090,085 and ends at the request block minus 64. The Registry stores that exact window in the pending record and in the accepted fact. A false answer clears the pair for another paid request after more jobs.
+
+The fixture in `templates/fixtures/T6-operator-reference.json` uses claimant `0x000000000000000000000000000000000000c1a1` and last block 26,237,654. Its independent canonical hash is in the adjacent `T6-operator-hash.txt`. Substitute the claimant in lowercase hex and the end block in decimal:
+
+Up to block 26237654 on Ethereum mainnet, did the wallet 0x000000000000000000000000000000000000c1a1 operate an IdentityMD seat through at least 3 accepted Identity.md swarm jobs while it held that seat? Answer true or false.
+
+**method**: Four steps, executed in order as one procedure: seats (step 1), agent (step 2), accepted (step 3), answer (step 4). Every read is of Ethereum mainnet archive logs and state up to block 26237654 inclusive. A pruned, null or partial log read, or an endpoint without the window, is no evidence: write no answer, never false.
+
+**seats**: Step 1, seats. Every Transfer(from, to, tokenId; all indexed) log of the IdentityMD collection 0x0000eC93127BAA929E58E97dd0095A2BFb38ec1D from block 25090085 to 26237654 whose from or to is 0x000000000000000000000000000000000000c1a1. Per tokenId, a holding interval runs from the block of a transfer to the wallet (inclusive) to the block of the next transfer of that token away from it (exclusive); an interval still open at 26237654 ends at 26237654 inclusive. Same-block transfers are ordered by log index.
+
+**agent**: Step 2, the agents of a seat. The AgentBound(uint256 indexed agentId, uint8 indexed standard, address indexed tokenContract, uint256 tokenId, address registeredBy) logs of the adapter 0xde152AfB7db5373F34876E1499fbD893A82dD336 with tokenContract equal to the collection and tokenId equal to the seat. An agent is bound to the seat from the block of its AgentBound log on. A seat without a binding has no agent and counts nothing.
+
+**accepted**: Step 3, accepted jobs. The NewFeedback logs (topic 0 0x6a4a61743519c9d648a14e6493f47dbe3ff1aa29e7785c96c8326a205e58febc) of the reputation registry 0x8004baa17c55a88189ae136b182e5fda19de9b63 whose topic 2 is the batcher 0xb6d0a187b050fa5bb0b87033a203f37becf4a775, whose second data word (bytes 32 to 63) equals 1, whose block lies inside one of the wallet's holding intervals of a seat, and whose topic 1 is an agent bound to that seat at or before the log's block. Each such log is one entry.
+
+**answer**: Step 4, the answer. true when the entries of step 3, summed over every seat the wallet held, number at least 3; false otherwise. Count entries, not distinct jobs; a log whose second data word is not 1 counts nothing.
+
+**true**: true only if complete historical log reads establish at least 3 entries under the method.
+
+**false**: false only if complete historical log reads establish fewer than 3 entries under the method. If a read is pruned, null, partial or unavailable, write no answer; never answer false from an incomplete read.
+
+**window**: The window is blocks 25090085 to 26237654 inclusive on Ethereum mainnet; it fixes which logs and chain state count. The current head is not the window.
+
+The fact belongs to each wallet's own holding intervals, not to a seat forever. Any agent binding at or before the entry counts; later bindings do not erase earlier work. Count feedback entries rather than distinct jobs. Pruned or incomplete historical reads produce no answer. The approved six-wallet lab run of 2026-10-21 is the acceptance evidence; no new lab request is part of this build.
+
+### Composer boundaries
+
+The public composition views trust their arguments and do not validate arbitrary specs; Registry passes only pinned dependencies and stored, validated specs. In T4, `fromBlock` remains in the canonical hash although the call occurs at `toBlock`; duplicate registrations cost only their registrant. T3's “positions beyond head” describes the panel's working; the accepted list has exactly head entries. Catalog windows are fixed historical anchors and do not undergo community registration's minimum-span guard.
+
+The readable static text table is `templates/composer-text.json`; `python3 tools/gen_composer_text.py --check` verifies its lossless packed representation and every offset in Composer. T1–T5 fixtures stay byte-identical.

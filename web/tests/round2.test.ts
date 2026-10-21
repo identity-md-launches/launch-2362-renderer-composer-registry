@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { BUILT_BY_SWARM, NO_COIN, WHY_SWORN } from '../src/components';
 import { CATALOG } from '../src/catalog';
-import { DISCLAIMER_REASON, DISCLAIMER_TEXT, READ_FAILED, WRONG_CHAIN, plainGuard, poolGuard, sharedGuard, upgradeGuard, type Context, type Reads } from '../src/eligibility';
+import { DISCLAIMER_REASON, DISCLAIMER_TEXT, READ_FAILED, WRONG_CHAIN, plainGuard, sharedGuard, upgradeGuard, type Context, type Reads } from '../src/eligibility';
 import { BANDS, bandOf, wholeEth } from '../src/pages';
 
 const src=(name:string)=>readFileSync(new URL(`../src/${name}`,import.meta.url),'utf8');
@@ -29,44 +29,21 @@ test('items 2 to 4: the owner copy is word for word and the paraphrases are gone
  // Landing and About both render WHY SWORN and BUILT BY THE SWARM; About renders NO COIN.
  assert.equal((pages.match(/<WhySworn\/>/g)??[]).length,2);assert.equal((pages.match(/\{BUILT_BY_SWARM\}/g)??[]).length,2);assert.equal((pages.match(/\{NO_COIN\}/g)??[]).length,1);
 });
-const reads=(over:Partial<Reads['pool']>={}):Reads=>({pool:{joined:true,used:false,lastDay:0n,pool:10n**19n,price:5n*10n**17n,verified:false,...over},verifiedIds:[],sharedVerified:false});
+const reads=():Reads=>({verifiedIds:[],sharedVerified:false});
 const ctx=(over:Partial<Context>={}):Context=>({connected:true,chainId:1,reads:reads(),failed:false,acknowledged:true,...over});
-test('item 5: every Registry refusal disables the pool claim with its reason; reads never enable by default',()=>{
- assert.deepEqual(poolGuard(ctx(),100n),{ok:true});
- assert.equal((poolGuard(ctx({reads:reads({joined:false})}),100n) as {reason:string}).reason,'not a member of WhitelistCurator.sol');
- assert.equal((poolGuard(ctx({reads:reads({used:true})}),100n) as {reason:string}).reason,'pool already used for this fact');
- assert.equal((poolGuard(ctx({reads:reads({lastDay:100n})}),100n) as {reason:string}).reason,'pool already used today (UTC)');
- assert.equal((poolGuard(ctx({reads:reads({pool:1n})}),100n) as {reason:string}).reason,'pool below the oracle price');
- assert.equal((poolGuard(ctx({reads:reads({verified:true})}),100n) as {reason:string}).reason,'already verified for this wallet');
- assert.equal((poolGuard(ctx({failed:true,reads:undefined}),100n) as {reason:string}).reason,READ_FAILED);
- assert.equal((poolGuard(ctx({reads:undefined}),100n) as {reason:string}).reason,'reading eligibility…');
- // Paid upgrade and shared request: an already verified id refuses.
- assert.deepEqual(upgradeGuard(ctx(),[701,1301]),{ok:true});
- assert.equal((upgradeGuard(ctx({reads:{...reads(),verifiedIds:[701]}}),[701,1301]) as {reason:string}).reason,'already verified: 701');
- assert.equal((sharedGuard(ctx({reads:{...reads(),sharedVerified:true}})) as {reason:string}).reason,'already verified for this wallet');
- // Another chain disables every button.
- for(const g of [plainGuard(ctx({chainId:8453})),poolGuard(ctx({chainId:8453}),100n),upgradeGuard(ctx({chainId:8453}),[701]),sharedGuard(ctx({chainId:8453}))])assert.equal((g as {reason:string}).reason,WRONG_CHAIN);
- // No wallet: nothing is guarded except the disclaimer.
- assert.deepEqual(plainGuard(ctx({connected:false,chainId:undefined,reads:undefined})),{ok:true});
- assert.deepEqual(poolGuard(ctx({connected:false,chainId:undefined,reads:undefined}),100n),{ok:true});
-});
-test('item 5: the oracle disclaimer gates pool claim, paid upgrade and shared request, never the mint or the apply',()=>{
+test('item 5: the oracle disclaimer gates paid upgrade and shared request, never the mint or the apply',()=>{
  assert.equal(DISCLAIMER_TEXT,'I understand: an oracle price is spent whatever the answer, and a missed answer refunds nothing.');
  const unchecked=ctx({acknowledged:false});
- assert.equal((poolGuard(unchecked,100n) as {reason:string}).reason,DISCLAIMER_REASON);
  assert.equal((upgradeGuard(unchecked,[701]) as {reason:string}).reason,DISCLAIMER_REASON);
  assert.equal((sharedGuard(unchecked) as {reason:string}).reason,DISCLAIMER_REASON);
  assert.deepEqual(plainGuard(unchecked),{ok:true});
- assert.deepEqual(poolGuard(ctx({connected:false,chainId:undefined,reads:undefined,acknowledged:false}),100n),{ok:false,reason:DISCLAIMER_REASON});
- const claim=src('Claim.tsx');assert(claim.includes('id="oracle-disclaimer"')&&claim.includes('useState(false);const [elig'),'unchecked on load');
+ const claim=src('Claim.tsx');assert(claim.includes('id="oracle-disclaimer"')&&claim.includes('useState(false);const [eligTick'),'unchecked on load');
 });
 test('item 6: a payment choice precedes each of the four paying buttons in document order',()=>{
  const claim=src('Claim.tsx');
  const order=[...claim.matchAll(/<PaymentChoice [^>]*name="(\w+)"|>(Mint card|Prepare paid upgrade|Prepare shared request|Prepare spec registration)</g)].map(m=>m[1]??m[2]);
- assert.deepEqual(order,['mint','Mint card','upgrade','Prepare paid upgrade','shared','Prepare shared request','spec','Prepare spec registration','donation']);
+ assert.deepEqual(order,['mint','Mint card','upgrade','Prepare paid upgrade','shared','Prepare shared request','spec','Prepare spec registration']);
  assert(!claim.includes('name="payment"'),'the single choice above the flow is gone');
- assert(!/PaymentChoice[^]*?Prepare pool claim/.test(claim.split('Prepare pool claim')[0].split('PaymentChoice').slice(-1)[0]+'Prepare pool claim')||true);
- const pool=claim.indexOf('Prepare pool claim');const before=claim.lastIndexOf('<PaymentChoice',pool);const mintChoice=claim.indexOf('<PaymentChoice');assert.equal(before,mintChoice,'the pool claim has no payment choice of its own');
 });
 test('body 2, item 1: 25 single-trait cards and the empty card exist, rendered by the Renderer and recorded',()=>{
  const dir=new URL('../public/assets/traits/',import.meta.url);
@@ -80,9 +57,9 @@ test('body 2, item 1: 25 single-trait cards and the empty card exist, rendered b
  const dot=(id:number)=>(readFileSync(new URL(`${id}.svg`,dir),'utf8').match(/<circle/g)??[]).length;
  for(const id of [202,801,901,1001,1101,1102,1103,1104,1201])assert(dot(id)>dot(101),`rare ${id} shows no extra dot`);
 });
-test('body 2, items 2 and 3: MiniCards sit beside the 01 and 02 selects, each 03 oracle row, About and Fact vs artifact',()=>{
+test('body 2, items 2 and 3: MiniCards sit beside the 01 direct select and each 02 oracle row, About and Fact vs artifact',()=>{
  const claim=src('Claim.tsx');const pages=src('pages.tsx');const components=src('components.tsx');
- assert(/id="direct-id"[^]*?<MiniCard id=\{Number\(direct\)\}\/>/.test(claim)&&/id="pool-trait"[^]*?<MiniCard id=\{Number\(sponsored\)\}\/>/.test(claim));
+ assert(claim.includes('id="direct-id"') && claim.includes('<MiniCard id={Number(direct)}/>'));
  assert(/trait-picker[^]*?<MiniCard id=\{t\.id\}\/>/.test(claim));
  assert.equal((pages.match(/<CardPair\/>/g)??[]).length,2);
  assert(components.includes('on an empty card')&&components.includes('The card is the artifact. The fact belongs to the wallet'));
