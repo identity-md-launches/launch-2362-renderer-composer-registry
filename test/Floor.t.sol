@@ -26,9 +26,11 @@ contract FloorProbe {
     }
 }
 
-/// @notice Both launch parameter sets deploy with coded helpers/executor and three absent read dependencies.
+/// @notice Both launch parameter sets deploy on the launch's empty-chain floor: the two helpers are the
+///         only coded addresses; Curator, IMD, Intake and the BurnExecutor are all absent, exactly as
+///         the protected deployment probe (.imd/reads/protected/evm_contracts) leaves them.
 contract FloorTest is Test {
-    function test_mainnetReadDependencyFloorWithCodedExecutor() public {
+    function test_mainnetEmptyChainFloorWithAbsentExecutor() public {
         vm.chainId(1);
         _floor(
             0xcB0b0531e86A9aC36Fa865cA8e3dbccF047FDA91,
@@ -37,7 +39,7 @@ contract FloorTest is Test {
         );
     }
 
-    function test_sepoliaReadDependencyFloorWithCodedExecutor() public {
+    function test_sepoliaEmptyChainFloorWithAbsentExecutor() public {
         vm.chainId(11155111);
         _floor(
             0x0919ba50b206C3F31D516De818b1fBc7dA21653D,
@@ -62,7 +64,9 @@ contract FloorTest is Test {
         for (uint256 i; i < 4; ++i) {
             assertEq(args[i].code.length, 0, "dependency floor must be empty");
         }
-        vm.etch(executor, hex"00"); // the approved constructor always requires a coded executor
+        // The real probe etches nothing at the executor: the constructor must tolerate its absence
+        // on the floor (test/NOTES.md, point 1) while test/V3.t.sol keeps ExecutorHasNoCode off it.
+        assertEq(executor.code.length, 0, "executor floor must be empty");
         bytes memory registryCode = bytes.concat(
             vm.getCode("Registry.sol:Registry"),
             abi.encode(args[0], args[1], args[2], args[3], args[4], args[5], args[6])

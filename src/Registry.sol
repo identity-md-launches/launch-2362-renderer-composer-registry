@@ -158,8 +158,11 @@ contract Registry is ERC721, IERC4906, ReentrancyGuard, IOracleConsumer {
     /// @param renderer_ the `Renderer` (no constructor arguments, no storage), deployed first
     /// @param composer_ the `Composer` (no constructor arguments, no storage), deployed first
     /// @param burnExecutor_ IMD BurnExecutor V2; fees are forwarded for bridging and burning on Base.
-    /// @dev Renderer and Composer are deployed first. A floor with no Curator, IMD or Intake code
-    ///      skips settlement, decimals and price reads; the three code checks always apply.
+    /// @dev Renderer and Composer are deployed first; code is required at both, always. A floor with
+    ///      no Curator, IMD or Intake code (the launch's empty-chain deployment probe) skips the
+    ///      settlement, decimals and price reads and the executor code check, which is an outside
+    ///      contract that does not exist there either. On every chain where the three read
+    ///      dependencies have code, a codeless executor reverts `ExecutorHasNoCode()`.
     constructor(
         address curator_,
         address imd_,
@@ -174,10 +177,10 @@ contract Registry is ERC721, IERC4906, ReentrancyGuard, IOracleConsumer {
                 || renderer_ == address(0) || composer_ == address(0) || burnExecutor_ == address(0)
         ) revert ZeroAddress();
         if (renderer_.code.length == 0 || composer_.code.length == 0) revert DependencyHasNoCode();
-        if (burnExecutor_.code.length == 0) revert ExecutorHasNoCode();
         curator = IWhitelistCurator(curator_);
         bool floor = curator_.code.length == 0 && imd_.code.length == 0 && intake_.code.length == 0;
         if (!floor) {
+            if (burnExecutor_.code.length == 0) revert ExecutorHasNoCode();
             require(curator.isSettled(), "Curator not settled");
             require(IERC20Metadata(imd_).decimals() == 18, "IMD decimals");
             require(IIntake(intake_).priceOf(ACTION, imd_) != 0, "Intake price");

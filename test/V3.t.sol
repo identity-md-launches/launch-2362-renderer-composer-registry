@@ -407,20 +407,35 @@ contract V3Test is Base {
             this.construct(d);
             d[i] = old;
         }
-        // Exactly the three passive-read dependencies may be absent on the floor.
+        // Off the floor (the three read dependencies have code) a codeless executor reverts.
+        d[6] = address(0xC004);
+        vm.expectRevert(Registry.ExecutorHasNoCode.selector);
+        this.construct(d);
+        d[6] = address(executor);
+        // The three passive-read dependencies may be absent on the floor, and so may the executor,
+        // which the launch's empty-chain probe does not create either (test/NOTES.md, point 1).
         d[0] = address(0xC001);
         d[1] = address(0xC002);
         d[2] = address(0xC003);
         Registry floor = this.construct(d);
         assertEq(floor.attester(), attester);
         assertEq(floor.burnExecutor(), address(executor));
-        for (uint256 i = 4; i < 7; ++i) {
+        d[6] = address(0xC004);
+        assertEq(this.construct(d).burnExecutor(), address(0xC004));
+        d[6] = address(executor);
+        // The two helpers must have code even on the floor.
+        for (uint256 i = 4; i < 6; ++i) {
             address old = d[i];
             d[i] = address(0xC004);
-            vm.expectRevert(i == 6 ? Registry.ExecutorHasNoCode.selector : Registry.DependencyHasNoCode.selector);
+            vm.expectRevert(Registry.DependencyHasNoCode.selector);
             this.construct(d);
             d[i] = old;
         }
+        // One read dependency with code is enough to leave the floor and require the executor.
+        d[2] = address(intake);
+        d[6] = address(0xC004);
+        vm.expectRevert(Registry.ExecutorHasNoCode.selector);
+        this.construct(d);
     }
 
     function test_closedGrammarAcceptsEveryPermittedTypeAndArray() public view {

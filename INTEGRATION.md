@@ -267,7 +267,7 @@ Anyone can bridge the executor balance by separately paying LayerZero's quote. T
 | `txCountOf(address)` | `uint256` deposits | 301 to 303 |
 | `contributedBy(address)` | `uint256` wei, the largest single send (`highWater`) | 401 to 404 |
 | `pointsOf(address)` | `uint256` points (1000 x sqrt(weight in ETH)) | 501 to 503 |
-| `isSettled()` | `bool`, true since hour 66 | sanity check in the constructor outside the all-four-empty floor, nothing else |
+| `isSettled()` | `bool`, true since hour 66 | sanity check in the constructor outside the floor (Curator, IMD and Intake all without code), nothing else |
 
 Never read `contributors(address)` for the hour: its fourth word is `firstHour + 1`. IDMD: `balanceOf(address)` for
 Swarmed uses T6 historical evidence, never a live balance predicate.
