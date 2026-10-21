@@ -333,16 +333,25 @@ contract AdversarialTest is Base {
     }
 
     function _isCatalogOracle(uint16 id) internal pure returns (bool) {
-        return
-            id == 701 || id == 801 || id == 901 || id == 1001 || (id >= 1101 && id <= 1105) || id == 1201 || id == 1301;
+        return id == 601 || id == 701 || id == 801 || id == 901 || id == 1001 || (id >= 1101 && id <= 1105)
+            || id == 1201 || id == 1301;
     }
 
     /// forge-config: default.fuzz.runs = 256
     function test_fuzz_upgradeRejectsEveryIdThatIsNotAnOracleTrait(uint16 id) public {
-        vm.assume(!_isCatalogOracle(id) || id == 1201);
+        // All uint16 inputs are exercised. Swarmed joined the paid catalog in docs/V3.md item 6.
+        bool personalOracle = _isCatalogOracle(id) && id != 1201;
         fund(alice, PRICE);
         uint16[] memory ids = new uint16[](1);
         ids[0] = id;
+        if (personalOracle) {
+            vm.prank(alice);
+            registry.upgrade(ids, PRICE);
+            assertEq(registry.pendingOf(alice, id), intake.lastId());
+            assertEq(imd.balanceOf(address(intake)), PRICE);
+            assertEq(imd.balanceOf(address(registry)), 0);
+            return;
+        }
         vm.prank(alice);
         // 1201 is an oracle trait but a shared fact: it goes through requestSharedFact, never upgrade
         bytes4 want = id == 1201 ? Registry.NotASharedFact.selector : Registry.NotAnOracleTrait.selector;
